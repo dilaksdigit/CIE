@@ -7,6 +7,8 @@ class Cluster extends Model
 {
     protected $table = 'clusters';
     protected $guarded = [];
+    protected $keyType = 'string';
+    public $incrementing = false;
 
     public function skus()
     {

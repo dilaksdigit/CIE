@@ -7,6 +7,8 @@ class Sku extends Model
 {
     protected $table = 'skus';
     protected $guarded = [];
+    protected $keyType = 'string';
+    public $incrementing = false;
 
     public function primaryCluster()
     {

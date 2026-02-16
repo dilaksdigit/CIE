@@ -32,14 +32,34 @@ class TierCalculationService
  return $changes;
  }
  
+ public function calculateCommercialScore(Sku $sku): float
+ {
+     $marginWeight = ($sku->margin_percent / 100) * 0.4;
+     
+     // Handle CPPC: lower is better, 1/cppc. If 0, assign max score component (0.25)
+     $cppcComponent = $sku->erp_cppc > 0 ? (1 / $sku->erp_cppc) : 0;
+     $cppcWeight = min($cppcComponent, 1) * 0.25; // Cap at 0.25
+     
+     $velocityWeight = min($sku->annual_volume / 1000, 1) * 0.2; // Normalize volume
+     
+     $returnRateWeight = (1 - ($sku->erp_return_rate_pct / 100)) * 0.15;
+     
+     return round(($marginWeight + $cppcWeight + $velocityWeight + $returnRateWeight) * 100, 4);
+ }
+
  private function calculateTierForSku(Sku $sku, float $marginPercentile, int $volumePercentile): TierType
  {
- if ($sku->strategic_hero) { return TierType::HERO; }
- if ($this->shouldBeKilled($sku)) { return TierType::KILL; }
- if ($sku->margin_percent >= $marginPercentile && $sku->annual_volume >= $volumePercentile) { return TierType::HERO; }
- if ($sku->margin_percent >= self::PROFITABILITY_THRESHOLD) { return TierType::SUPPORT; }
- if ($sku->margin_percent > 0) { return TierType::HARVEST; }
- return TierType::KILL;
+     if ($sku->strategic_hero) { return TierType::HERO; }
+     if ($this->shouldBeKilled($sku)) { return TierType::KILL; }
+     
+     $commercialScore = $this->calculateCommercialScore($sku);
+     $sku->update(['commercial_score' => $commercialScore]);
+
+     // Tiering based on weighted commercial score
+     if ($commercialScore >= 60) { return TierType::HERO; }
+     if ($commercialScore >= 40) { return TierType::SUPPORT; }
+     if ($commercialScore > 0) { return TierType::HARVEST; }
+     return TierType::KILL;
  }
  
  private function shouldBeKilled(Sku $sku): bool

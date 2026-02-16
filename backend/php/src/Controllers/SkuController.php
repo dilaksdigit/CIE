@@ -6,8 +6,22 @@ use App\Utils\ResponseFormatter;
 use Illuminate\Http\Request;
 
 class SkuController {
-    public function index() {
-        return ResponseFormatter::format(Sku::with('primaryCluster')->get());
+    public function index(Request $request) {
+        $query = Sku::with(['primaryCluster']);
+        
+        if ($request->has('tier')) {
+            $query->where('tier', $request->query('tier'));
+        }
+        
+        if ($request->has('search')) {
+            $search = $request->query('search');
+            $query->where(function($q) use ($search) {
+                $q->where('sku_code', 'like', "%$search%")
+                  ->orWhere('title', 'like', "%$search%");
+            });
+        }
+
+        return ResponseFormatter::format($query->get());
     }
 
     public function show($id) {
@@ -18,6 +32,6 @@ class SkuController {
     public function update(Request $request, $id) {
         $sku = Sku::findOrFail($id);
         $sku->update($request->all());
-        return ResponseFormatter::format($sku);
+        return ResponseFormatter::format($sku->fresh(['primaryCluster', 'skuIntents.intent']));
     }
 }
