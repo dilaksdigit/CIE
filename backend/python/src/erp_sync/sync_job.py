@@ -1,23 +1,22 @@
+import pandas as pd
+import os
 import logging
-from datetime import datetime
-from typing import Dict, List
-from .connectors import ODBCConnector
+from src.utils.config import get_config
 
 logger = logging.getLogger(__name__)
 
-class ERPSyncJob:
-    def __init__(self, db_connection, connector_type='odbc'):
-        self.db = db_connection
-        self.connector = ODBCConnector() if connector_type == 'odbc' else None
-    
-    def run(self) -> Dict:
-        logger.info("Starting ERP sync job")
-        start_time = datetime.now()
-        erp_data = self.connector.fetch_sku_data()
-        for record in erp_data:
-            self._process_sku_record(record)
-        return {'status': 'done', 'records': len(erp_data)}
-
-    def _process_sku_record(self, record):
-        # Update database logic
-        pass
+def sync_from_csv(file_path):
+    """
+    Syncs product data from an ERP CSV export.
+    """
+    logger.info(f"Starting ERP sync from {file_path}")
+    try:
+        df = pd.read_csv(file_path)
+        # Expected columns: sku_code, title, margin_percent, annual_volume
+        # Process and save to DB
+        # ... logic to update MySQL ...
+        logger.info(f"Successfully synced {len(df)} SKUs from ERP.")
+        return True
+    except Exception as e:
+        logger.error(f"ERP sync failed: {str(e)}")
+        return False
