@@ -1,0 +1,88 @@
+<?php
+namespace App\Validators;
+use App\Models\Sku;
+use App\Enums\ValidationStatus;
+use App\Validators\Gates\G1_BasicInfoGate;
+use App\Validators\Gates\G2_ImagesGate;
+use App\Validators\Gates\G3_SEOGate;
+use App\Validators\Gates\G4_VectorGate;
+use App\Validators\Gates\G5_TechnicalGate;
+use App\Validators\Gates\G6_CommercialGate;
+use App\Validators\Gates\G7_ExpertGate;
+class GateValidator
+{
+ private array $gates = [
+ G1_BasicInfoGate::class,
+ G2_ImagesGate::class,
+ G3_SEOGate::class,
+ G4_VectorGate::class,
+ G5_TechnicalGate::class,
+ G6_CommercialGate::class,
+ G7_ExpertGate::class,
+ ];
+ 
+ public function validateAll(Sku $sku): array
+ {
+ $results = [];
+ $overallPassed = true;
+ $isDegraded = false;
+ $blockingFailure = null;
+ 
+ foreach ($this->gates as $gateClass) {
+ $gate = app($gateClass);
+ $result = $gate->validate($sku);
+ $results[] = $result;
+ 
+ // Log the gate check
+ \App\Models\ValidationLog::create([
+ 'sku_id' => $sku->id,
+ 'gate_type' => $result->gate,
+ 'passed' => $result->passed,
+ 'reason' => $result->reason,
+ 'is_blocking' => $result->blocking,
+ 'similarity_score' => $result->metadata['similarity'] ?? null,
+ 'validated_by' => auth()->id()
+ ]);
+ 
+ if (!$result->passed) {
+ if ($result->blocking) {
+ $overallPassed = false;
+ if (!$blockingFailure) {
+ $blockingFailure = $result;
+ }
+ }
+ if ($result->metadata['degraded'] ?? false) {
+ $isDegraded = true;
+ }
+ }
+ }
+ 
+ if ($overallPassed) {
+ $status = ValidationStatus::VALID;
+ $canPublish = true;
+ $nextAction = 'SKU is ready for publication';
+ } elseif ($isDegraded) {
+ $status = ValidationStatus::DEGRADED;
+ $canPublish = false;
+ $nextAction = 'Save allowed but publication blocked. Validation will retry automatically.';
+ } else {
+ $status = ValidationStatus::INVALID;
+ $canPublish = false;
+ $nextAction = $blockingFailure ? $blockingFailure->reason : 'Fix validation errors before publication';
+ }
+ 
+ $sku->update([
+ 'validation_status' => $status,
+ 'can_publish' => $canPublish,
+ 'last_validated_at' => now()
+ ]);
+ 
+ return [
+ 'sku_id' => $sku->id,
+ 'overall_status' => $status->value,
+ 'can_publish' => $canPublish,
+ 'gates' => array_map(fn($r) => $r->toArray(), $results),
+ 'next_action' => $nextAction
+ ];
+ }
+}
