@@ -1,11 +1,16 @@
 from flask import Flask, request, jsonify
 import os
 import sys
+from dotenv import load_dotenv
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# Add the backend/python directory to path so 'src' is importable
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Load environment variables from .env
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 from src.vector.validation import validate_cluster_match
+from src.vector.embedding import get_embedding
 
 app = Flask(__name__)
 
@@ -14,15 +19,7 @@ def validate_vector():
     data = request.json
     description = data.get('description')
     cluster_id = data.get('cluster_id')
-    sku_id = data.get('sku_id', 'unknown')
-    
-    # In the existing validation.py, validate_cluster_match takes (request_vector, cluster_id)
-    # But wait, my previous view_file showed it takes (request_vector, cluster_id)
-    # and embedding.cosine_similarity(request_vector, cluster_vec).
-    # I need to get the embedding first.
-    
-    from src.vector.embedding import get_embedding
-    
+
     try:
         sku_vector = get_embedding(description)
         result = validate_cluster_match(sku_vector, cluster_id)
@@ -34,5 +31,10 @@ def validate_vector():
             'reason': str(e)
         }), 500
 
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok', 'service': 'CIE Python Worker'})
+
 if __name__ == '__main__':
+    print("CIE Python Worker starting on http://0.0.0.0:5000")
     app.run(host='0.0.0.0', port=5000)

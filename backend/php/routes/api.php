@@ -1,6 +1,13 @@
 <?php
-use App\Controllers\*;
+use App\Controllers\AuthController;
+use App\Controllers\SkuController;
+use App\Controllers\ValidationController;
+use App\Controllers\TierController;
+use App\Controllers\ClusterController;
+use App\Controllers\AuditController;
+use App\Controllers\BriefController;
 use App\Enums\RoleType;
+use Illuminate\Support\Facades\Route;
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('auth')->group(function () {
  Route::get('/skus', [SkuController::class, 'index']);
