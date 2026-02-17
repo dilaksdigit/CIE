@@ -18,6 +18,21 @@ app = Flask(__name__)
 audit_queue = {}
 brief_queue = {}
 
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint"""
+    return jsonify({
+        'service': 'CIE Python Worker API',
+        'status': 'running',
+        'version': '1.0.0',
+        'endpoints': [
+            '/health',
+            '/validate-vector',
+            '/queue/audit',
+            '/queue/brief-generation'
+        ]
+    }), 200
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
