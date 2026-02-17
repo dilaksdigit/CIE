@@ -19,4 +19,19 @@ class Sku extends Model
     {
         return $this->hasMany(SkuIntent::class);
     }
+
+    public function secondaryIntents()
+    {
+        return $this->hasMany(SkuIntent::class)->where('is_primary', false);
+    }
+
+    public function auditResults()
+    {
+        return $this->hasMany(AuditResult::class, 'sku_id');
+    }
+
+    public function validationLogs()
+    {
+        return $this->hasMany(ValidationLog::class, 'sku_id');
+    }
 }

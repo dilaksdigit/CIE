@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/common/Sidebar';
 import Toast from './components/common/Toast';
 import Login from './components/auth/Login';
+import Register from './components/auth/Register';
 import Dashboard from './pages/Dashboard';
 import SkuEdit from './pages/SkuEdit';
 import ReviewQueue from './pages/ReviewQueue';
@@ -32,6 +33,7 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/" element={<AppLayout><Dashboard /></AppLayout>} />
         <Route path="/sku-edit/:id" element={<AppLayout><SkuEdit /></AppLayout>} />
         <Route path="/sku-edit" element={<AppLayout><SkuEdit /></AppLayout>} />

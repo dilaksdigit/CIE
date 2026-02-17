@@ -15,9 +15,16 @@ class TierLockMiddleware
         $sku = Sku::find($skuId);
         if (!$sku) return $next($request);
 
-        // Hero and Support tiers have certain fields locked if they are already validated
+        // Patch 6: Kill-tier SKUs - absolute lock on any edit
+        if ($sku->tier === TierType::KILL) {
+            return response()->json([
+                'error' => "KILL TIER: Policy violation. Any edit to a decommissioned SKU is prohibited."
+            ], 403);
+        }
+
+        // Hero and Support tiers have certain fields locked if they are already validated (G6.1)
         if (($sku->tier === TierType::HERO || $sku->tier === TierType::SUPPORT) && $sku->validation_status === 'VALID') {
-            $lockedFields = ['title', 'primary_cluster_id', 'long_description'];
+            $lockedFields = ['title', 'primary_cluster_id', 'long_description', 'sku_intents', 'best_for', 'not_for'];
             foreach ($lockedFields as $field) {
                 if ($request->has($field) && $request->input($field) !== $sku->$field) {
                     return response()->json([

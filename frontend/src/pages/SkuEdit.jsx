@@ -36,7 +36,8 @@ const SkuEdit = () => {
         const fetchSku = async () => {
             try {
                 const response = await skuApi.get(id);
-                setSku(response.data.data);
+                // API returns { sku: {...}, instructions: {...} }
+                setSku(response.data.data.sku);
             } catch (err) {
                 console.error('Failed to fetch SKU:', err);
                 addNotification({ type: 'error', message: 'Failed to load SKU' });
@@ -45,20 +46,23 @@ const SkuEdit = () => {
             }
         };
         fetchSku();
-    }, [id, addNotification]);
+    }, [id]);
 
     const handleSave = async (isSubmit = false) => {
         setSaving(true);
         try {
-            await skuApi.update(id, sku);
+            console.log('Saving SKU:', { id, sku });
+            const response = await skuApi.update(id, sku);
+            console.log('Save response:', response);
             addNotification({
                 type: 'success',
                 message: isSubmit ? 'Submitted for review' : 'Draft saved successfully'
             });
             if (isSubmit) navigate('/review');
         } catch (err) {
-            console.error('Save failed:', err);
-            addNotification({ type: 'error', message: 'Failed to save changes' });
+            console.error('Save failed:', err.response?.data || err.message);
+            const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to save changes';
+            addNotification({ type: 'error', message: errorMsg });
         } finally {
             setSaving(false);
         }
@@ -98,6 +102,9 @@ const SkuEdit = () => {
         { id: 'history', label: 'History' },
     ];
 
+    const isKillTier = currentTier === 'KILL';
+    const isHarvestTier = currentTier === 'HARVEST';
+
     return (
         <div>
             {/* Tier Header Banner */}
@@ -112,16 +119,23 @@ const SkuEdit = () => {
                         <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>— {sku.title}</span>
                     </div>
                     <div style={{ fontSize: "0.62rem", color: tierStyle.color, marginTop: 4 }}>
-                        {currentTier} TIER: {currentTier === 'HERO' ? 'Full content required. All 7 gates + vector must pass.' : 'Standard governance requirements apply.'}
+                        {currentTier} TIER: {isKillTier ? 'DECOMMISSIONED. All edits disabled per policy.' : (isHarvestTier ? 'HARVEST MODE: Specification intent only. Effort cap: 30m/quarter.' : (currentTier === 'HERO' ? 'Full content required. All 7 gates + vector must pass.' : 'Standard governance requirements apply.'))}
                     </div>
                 </div>
-                <div className="flex gap-8">
-                    <button className="btn btn-secondary" onClick={() => handleSave(false)} disabled={saving}>
-                        {saving ? 'Saving...' : 'Save Draft'}
-                    </button>
-                    <button className="btn btn-primary" onClick={() => handleSave(true)} disabled={saving}>
-                        Submit for Review
-                    </button>
+                <div className="flex gap-8" style={{ flexShrink: 0, minWidth: 'fit-content' }}>
+                    {!isKillTier && (
+                        <>
+                            <button className="btn btn-secondary" onClick={() => handleSave(false)} disabled={saving} style={{ cursor: 'pointer', pointerEvents: 'auto' }}>
+                                {saving ? 'Saving...' : 'Save Draft'}
+                            </button>
+                            <button className="btn btn-primary" onClick={() => handleSave(true)} disabled={saving} style={{ cursor: 'pointer', pointerEvents: 'auto' }}>
+                                Submit for Review
+                            </button>
+                        </>
+                    )}
+                    {isKillTier && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--red)', fontWeight: 600 }}>READ-ONLY MODE</div>
+                    )}
                 </div>
             </div>
 

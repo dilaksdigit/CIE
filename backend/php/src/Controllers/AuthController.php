@@ -2,11 +2,90 @@
 namespace App\Controllers;
 
 use App\Models\User;
+use App\Models\Role;
 use App\Utils\ResponseFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AuthController {
+    public function register(Request $request) {
+        // Validate input
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:6|confirmed',
+            'role' => 'required|string|in:editor,governor,analyst,admin'
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+        
+        try {
+            // Split full name into first and last name
+            $nameParts = explode(' ', trim($request->input('name')), 2);
+            $firstName = $nameParts[0];
+            $lastName = $nameParts[1] ?? '';
+            
+            // Map frontend roles to database role names
+            $roleMapping = [
+                'editor' => 'CONTENT_EDITOR',
+                'governor' => 'SEO_GOVERNOR',
+                'analyst' => 'AI_OPS',
+                'admin' => 'ADMIN'
+            ];
+            
+            $roleName = $roleMapping[$request->input('role')] ?? 'VIEWER';
+            $role = Role::where('name', $roleName)->first();
+            
+            if (!$role) {
+                return response()->json(['error' => 'Role not found'], 400);
+            }
+            
+            // Create user with explicit ID generation
+            $userId = Str::uuid()->toString();
+            $user = new User();
+            $user->id = $userId;
+            $user->email = $request->input('email');
+            $user->first_name = $firstName;
+            $user->last_name = $lastName;
+            $user->password_hash = Hash::make($request->input('password'));
+            $user->is_active = true;
+            $user->save();
+            
+            // Assign role through user_roles table
+            if ($user && $role) {
+                DB::table('user_roles')->insert([
+                    'user_id' => $user->id,
+                    'role_id' => $role->id,
+                    'assigned_at' => now(),
+                ]);
+            }
+            
+            // Refresh user to get all attributes
+            $user->refresh();
+            
+            // Generate token
+            $token = bin2hex(random_bytes(32));
+            
+            // Return user with name field for frontend
+            $userArray = $user->toArray();
+            $userArray['name'] = $user->first_name . ' ' . $user->last_name;
+            $userArray['role'] = $roleName;
+            
+            return ResponseFormatter::format([
+                'user' => $userArray,
+                'token' => $token,
+                'message' => 'Account created successfully'
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Registration failed: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function login(Request $request) {
         $user = User::where('email', $request->input('email'))->first();
         
@@ -17,8 +96,20 @@ class AuthController {
         // Custom token generation for this standalone setup
         $token = bin2hex(random_bytes(32));
         
+        // Get user's role
+        $userRole = DB::table('user_roles')
+            ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+            ->where('user_roles.user_id', $user->id)
+            ->select('roles.name')
+            ->first();
+        
+        // Return user with name field for frontend
+        $userArray = $user->toArray();
+        $userArray['name'] = $user->first_name . ' ' . $user->last_name;
+        $userArray['role'] = $userRole ? $userRole->name : 'VIEWER';
+        
         return ResponseFormatter::format([
-            'user' => $user,
+            'user' => $userArray,
             'token' => $token
         ]);
     }

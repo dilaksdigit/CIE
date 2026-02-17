@@ -12,7 +12,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { skuApi } from '../services/api';
 import useStore from '../store';
-import { MOCK_SKUS } from '../data/mockData';
 
 const COLORS = {
     hero: "#8B6914",
@@ -29,37 +28,25 @@ const Dashboard = () => {
     const [skus, setSkus] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState(null);
-    const [isMock, setIsMock] = React.useState(false);
 
     React.useEffect(() => {
         const fetchData = async () => {
             try {
+                setLoading(true);
+                setError(null);
                 const response = await skuApi.list();
                 // Standard Laravel/ResponseFormatter structure: response.data.data
-                setSkus(response.data.data || []);
-                setIsMock(false);
+                const skuData = response.data.data || [];
+                setSkus(skuData);
             } catch (err) {
                 console.error('Failed to fetch SKUs:', err);
-                // Fallback to mock data for visualization but mark it
-                setSkus(MOCK_SKUS.map(s => ({
-                    ...s,
-                    sku_code: s.id,
-                    title: s.name,
-                    readiness_score: s.readiness
-                })));
-                setIsMock(true);
-                addNotification({
-                    type: 'error',
-                    message: err.response?.status === 401
-                        ? 'Session expired. Please login for full access.'
-                        : 'Using offline demonstration data.'
-                });
+                setError('Failed to load SKUs from database');
             } finally {
                 setLoading(false);
             }
         };
         fetchData();
-    }, [addNotification]);
+    }, []);
 
     if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)', height: '100%' }}>Loading portfolio health...</div>;
     if (error) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--red)', height: '100%' }}>{error}</div>;
@@ -136,6 +123,12 @@ const Dashboard = () => {
                             <option>Harvest</option>
                             <option>Kill</option>
                         </select>
+                        <select className="filter-select">
+                            <option>All Categories</option>
+                            <option>Cables</option>
+                            <option>Lampshades</option>
+                        </select>
+                        <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.7rem' }}>Export benefits.csv</button>
                     </div>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -155,12 +148,8 @@ const Dashboard = () => {
                             {skus.map(sku => (
                                 <tr
                                     key={sku.id}
-                                    style={{ cursor: isMock ? 'not-allowed' : 'pointer', opacity: isMock ? 0.8 : 1 }}
+                                    style={{ cursor: 'pointer' }}
                                     onClick={() => {
-                                        if (isMock) {
-                                            addNotification({ type: 'error', message: 'Interactive editing disabled for demo data' });
-                                            return;
-                                        }
                                         navigate(`/sku-edit/${sku.id}`);
                                     }}
                                 >

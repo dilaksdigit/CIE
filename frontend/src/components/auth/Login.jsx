@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import useStore from '../../store/index';
 import { authApi } from '../../services/api';
 
@@ -7,10 +7,19 @@ const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
 
     const navigate = useNavigate();
+    const location = useLocation();
     const setLogin = useStore(state => state.login);
+
+    useEffect(() => {
+        // Check if redirected from register with success message
+        if (location.state?.message) {
+            setSuccess(location.state.message);
+        }
+    }, [location]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -33,8 +42,9 @@ const Login = () => {
 
     const handleDemoLogin = () => {
         // Mock success
-        useStore.getState().setUser({ id: 1, name: 'David L.', role: 'governor' });
-        useStore.getState().setToken('demo-token');
+        const demoUser = { id: 1, name: 'David L.', role: 'governor' };
+        const demoToken = 'demo-token-' + Date.now();
+        useStore.getState().login(demoUser, demoToken);
         navigate('/');
     };
 
@@ -48,6 +58,7 @@ const Login = () => {
                 <div className="login-sub">v2.3.2 — Secure Access Protocol</div>
 
                 {error && <div className="error-msg">{error}</div>}
+                {success && <div style={{ padding: '10px', background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 4, color: 'var(--green)', marginBottom: 14, fontSize: '0.85rem' }}>{success}</div>}
 
                 <form onSubmit={handleSubmit}>
                     <div className="mb-14">
@@ -96,6 +107,13 @@ const Login = () => {
                         🚀 Enter Demo Mode
                     </button>
                 </form>
+
+                <div style={{ marginTop: 18, textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-dim)' }}>
+                    Don't have an account?{' '}
+                    <Link to="/register" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+                        Sign Up
+                    </Link>
+                </div>
             </div>
         </div>
     );

@@ -33,6 +33,13 @@ api.interceptors.response.use(
 // ====== Auth ======
 export const authApi = {
     login: (email, password) => api.post('/auth/login', { email, password }),
+    register: (name, email, password, password_confirmation, role) => api.post('/auth/register', { 
+        name, 
+        email, 
+        password,
+        password_confirmation,
+        role 
+    }),
 };
 
 // ====== SKUs ======

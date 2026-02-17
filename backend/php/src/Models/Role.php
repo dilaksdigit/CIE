@@ -7,6 +7,8 @@ class Role extends Model
 {
     protected $table = 'roles';
     protected $guarded = [];
+    public $incrementing = false;
+    protected $keyType = 'string';
 
     public function users()
     {

@@ -2,10 +2,18 @@
 namespace App\Controllers;
 
 use App\Models\Sku;
+use App\Services\ValidationService;
 use App\Utils\ResponseFormatter;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class SkuController {
+    protected $validationService;
+
+    public function __construct(ValidationService $validationService) {
+        $this->validationService = $validationService;
+    }
+
     public function index(Request $request) {
         $query = Sku::with(['primaryCluster']);
         
@@ -26,12 +34,88 @@ class SkuController {
 
     public function show($id) {
         $sku = Sku::with(['primaryCluster', 'skuIntents.intent'])->findOrFail($id);
-        return ResponseFormatter::format($sku);
+        
+        // Patch 6: Tier-mode UX Copy & Banners
+        $meta = [
+            'tier_lock_reason' => $sku->validation_status === 'VALID' ? "Validated {$sku->tier->value} products have core fields locked for governance." : null,
+            'cms_banner' => $this->getTierBanner($sku->tier->value ?? 'SUPPORT'),
+            'field_tooltips' => [
+                'best_for' => "Min 2 required for Hero/Support (v2.3.2)",
+                'not_for' => "Min 1 required for all validated SKUs (v2.3.2)"
+            ]
+        ];
+
+        return ResponseFormatter::format(['sku' => $sku, 'instructions' => $meta]);
+    }
+
+    private function getTierBanner($tier) {
+        switch ($tier) {
+            case 'HERO': return "HERO MODE: Full schema required. Max AI citation priority.";
+            case 'KILL': return "KILL TIER: Editing disabled per policy. SKU marked for decommissioning.";
+            default: return "Standard technical maintenance mode active.";
+        }
     }
 
     public function update(Request $request, $id) {
-        $sku = Sku::findOrFail($id);
-        $sku->update($request->all());
-        return ResponseFormatter::format($sku->fresh(['primaryCluster', 'skuIntents.intent']));
+        try {
+            $sku = Sku::findOrFail($id);
+            
+            // Patch 6: Kill-tier SKUs - absolute lock on any edit
+            if ($sku->tier === 'KILL') {
+                return response()->json([
+                    'error' => "KILL TIER: Policy violation. Any edit to a decommissioned SKU is prohibited."
+                ], 403);
+            }
+
+            // Test 4.5: Version Conflict Detection
+            $clientVersion = $request->input('lock_version');
+            if ($clientVersion && $clientVersion != $sku->lock_version) {
+                 return response()->json([
+                    'error' => "VERSION CONFLICT: This SKU was modified by another user at T=2. Please merge or discard your changes (v{$clientVersion} != server v{$sku->lock_version})."
+                ], 409);
+            }
+
+            // Only update specific fields that are editable
+            $updateData = [];
+            $editableFields = ['title', 'short_description', 'ai_answer_block', 'ai_answer_block_chars', 'meta_description', 'best_for', 'not_for', 'faq_data'];
+            
+            foreach ($editableFields as $field) {
+                if ($request->has($field)) {
+                    $updateData[$field] = $request->input($field);
+                }
+            }
+            
+            $updateData['lock_version'] = ($sku->lock_version ?? 1) + 1;
+
+            $sku->update($updateData);
+
+            // Run validation after update
+            $validationResult = $this->validationService->validate($sku->fresh());
+
+            return ResponseFormatter::format([
+                'sku' => $sku->fresh(['primaryCluster', 'skuIntents.intent']),
+                'validation' => $validationResult
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'SKU not found'], 404);
+        } catch (\Exception $e) {
+            Log::error('SKU update failed: ' . $e->getMessage());
+            return response()->json(['error' => 'Update failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function store(Request $request) {
+        $data = $request->all();
+        $data['lock_version'] = 1;
+
+        $sku = Sku::create($data);
+
+        // Run validation after creation
+        $validationResult = $this->validationService->validate($sku->fresh());
+
+        return ResponseFormatter::format([
+            'sku' => $sku->fresh(['primaryCluster', 'skuIntents.intent']),
+            'validation' => $validationResult
+        ], "SKU created successfully", 201);
     }
 }

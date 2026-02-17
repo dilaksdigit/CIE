@@ -3,21 +3,21 @@ namespace App\Validators;
 use App\Models\Sku;
 use App\Enums\ValidationStatus;
 use App\Validators\Gates\G1_BasicInfoGate;
-use App\Validators\Gates\G2_ImagesGate;
-use App\Validators\Gates\G3_SEOGate;
-use App\Validators\Gates\G4_VectorGate;
+use App\Validators\Gates\G2_IntentGate;
+use App\Validators\Gates\G3_SecondaryIntentGate;
+use App\Validators\Gates\G4_AnswerBlockGate;
 use App\Validators\Gates\G5_TechnicalGate;
-use App\Validators\Gates\G6_CommercialGate;
+use App\Validators\Gates\G6_CommercialPolicyGate;
 use App\Validators\Gates\G7_ExpertGate;
 class GateValidator
 {
  private array $gates = [
  G1_BasicInfoGate::class,
- G2_ImagesGate::class,
- G3_SEOGate::class,
- G4_VectorGate::class,
+  G2_IntentGate::class,
+  G3_SecondaryIntentGate::class,
+  G4_AnswerBlockGate::class,
  G5_TechnicalGate::class,
- G6_CommercialGate::class,
+  G6_CommercialPolicyGate::class,
  G7_ExpertGate::class,
  ];
  
@@ -28,8 +28,8 @@ class GateValidator
  $isDegraded = false;
  $blockingFailure = null;
  
- foreach ($this->gates as $gateClass) {
- $gate = app($gateClass);
+  foreach ($this->gates as $gateClass) {
+  $gate = new $gateClass();
  $result = $gate->validate($sku);
  $results[] = $result;
  
@@ -41,7 +41,7 @@ class GateValidator
  'reason' => $result->reason,
  'is_blocking' => $result->blocking,
  'similarity_score' => $result->metadata['similarity'] ?? null,
- 'validated_by' => auth()->id()
+  'validated_by' => (function_exists('auth') && app()->bound('auth') && auth()->check()) ? auth()->id() : null
  ]);
  
  if (!$result->passed) {
@@ -74,7 +74,8 @@ class GateValidator
  $sku->update([
  'validation_status' => $status,
  'can_publish' => $canPublish,
- 'last_validated_at' => now()
+ 'last_validated_at' => now(),
+ 'ai_validation_pending' => $isDegraded
  ]);
  
  return [

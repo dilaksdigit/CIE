@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { RoleBadge } from './UIComponents';
 import { NAV_ITEMS } from '../../data/mockData';
+import useStore from '../../store';
 
 const Sidebar = () => {
     const [collapsed, setCollapsed] = useState(false);
+    const { user, logout } = useStore();
+    const navigate = useNavigate();
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
 
     return (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -41,13 +49,20 @@ const Sidebar = () => {
 
             {/* User footer */}
             <div className="sidebar-footer">
-                <div className="sidebar-avatar">DL</div>
+                <div className="sidebar-avatar">{user?.name?.substring(0, 2)?.toUpperCase() || 'DL'}</div>
                 {!collapsed && (
-                    <div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text)', fontWeight: 600 }}>David L.</div>
-                        <RoleBadge role="governor" />
+                    <div className="sidebar-user-info">
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text)', fontWeight: 600 }}>{user?.name || 'User'}</div>
+                        <RoleBadge role={user?.role || 'governor'} />
                     </div>
                 )}
+                <button 
+                    onClick={handleLogout}
+                    className="sidebar-logout-btn"
+                    title="Logout"
+                >
+                    🚪
+                </button>
             </div>
         </aside>
     );

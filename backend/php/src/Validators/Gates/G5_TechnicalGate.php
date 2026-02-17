@@ -36,6 +36,33 @@ class G5_TechnicalGate implements GateInterface
  blocking: true
  );
  }
+
+ // Patch 5: Best-For/Not-For Enforcement
+ $bestFor = array_filter(explode(',', $sku->best_for ?? ''));
+ $notFor = array_filter(explode(',', $sku->not_for ?? ''));
+
+ if (count($bestFor) < 2 || count($notFor) < 1) {
+     return new GateResult(
+         gate: GateType::G5_TECHNICAL,
+         passed: false,
+         reason: sprintf('V2.3.2 Requirement: Min 2 Best-For (found %d) and 1 Not-For (found %d) required.', 
+             count($bestFor), count($notFor)),
+         blocking: true
+     );
+ }
+
+ // Patch 4: Mandatory FAQ Templates (Hero/Support only)
+ if (in_array($sku->tier->value ?? '', ['HERO', 'SUPPORT'])) {
+     $faqCount = count(json_decode($sku->faq_data ?? '[]', true));
+     if ($faqCount < 3) {
+         return new GateResult(
+             gate: GateType::G5_TECHNICAL,
+             passed: false,
+             reason: 'Patch 4: Mandatory FAQ template incomplete. Min 3 FAQs required for Hero/Support.',
+             blocking: true
+         );
+     }
+ }
  
  $unitIssues = $this->validateUnits($skuSpecs);
  if (count($unitIssues) > 0) {
