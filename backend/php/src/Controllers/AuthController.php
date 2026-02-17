@@ -4,7 +4,6 @@ namespace App\Controllers;
 use App\Models\User;
 use App\Models\Role;
 use App\Utils\ResponseFormatter;
-use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -91,20 +90,6 @@ class AuthController {
         $user = User::where('email', $request->input('email'))->first();
         
         if (!$user || !Hash::check($request->input('password'), $user->password_hash)) {
-            // Log failed login attempt
-            AuditLog::create([
-                'entity_type' => 'user',
-                'entity_id'   => $user?->id ?? $request->input('email'),
-                'action'      => 'login',
-                'field_name'  => null,
-                'old_value'   => null,
-                'new_value'   => 'failed',
-                'actor_id'    => $user?->id ?? 'UNKNOWN',
-                'actor_role'  => 'system',
-                'ip_address'  => $request->ip(),
-                'user_agent'  => $request->userAgent(),
-                'timestamp'   => now(),
-            ]);
             return response()->json(['error' => 'Invalid credentials'], 401);
         }
         
@@ -122,21 +107,6 @@ class AuthController {
         $userArray = $user->toArray();
         $userArray['name'] = $user->first_name . ' ' . $user->last_name;
         $userArray['role'] = $userRole ? $userRole->name : 'VIEWER';
-
-        // Log successful login
-        AuditLog::create([
-            'entity_type' => 'user',
-            'entity_id'   => $user->id,
-            'action'      => 'login',
-            'field_name'  => null,
-            'old_value'   => null,
-            'new_value'   => 'success',
-            'actor_id'    => $user->id,
-            'actor_role'  => $userArray['role'] ?? 'UNKNOWN',
-            'ip_address'  => $request->ip(),
-            'user_agent'  => $request->userAgent(),
-            'timestamp'   => now(),
-        ]);
         
         return ResponseFormatter::format([
             'user' => $userArray,
