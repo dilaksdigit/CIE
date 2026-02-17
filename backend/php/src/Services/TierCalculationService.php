@@ -8,59 +8,103 @@ class TierCalculationService
  private const PROFITABILITY_THRESHOLD = 5.0; // 5% margin
  private const PERCENTILE_TOP = 20; // Top 20%
  
- public function recalculateAllTiers(): array
- {
- $allSkus = Sku::where('tier', '!=', TierType::KILL)->get();
- $marginPercentile = $this->calculatePercentile($allSkus, 'margin_percent', self::PERCENTILE_TOP);
- $volumePercentile = $this->calculatePercentile($allSkus, 'annual_volume', self::PERCENTILE_TOP);
- $changes = [];
- foreach ($allSkus as $sku) {
- $oldTier = $sku->tier;
- $newTier = $this->calculateTierForSku($sku, $marginPercentile, $volumePercentile);
- if ($oldTier !== $newTier) {
- $this->updateSkuTier($sku, $oldTier, $newTier);
- $changes[] = [
- 'sku_id' => $sku->id,
- 'sku_code' => $sku->sku_code,
- 'old_tier' => $oldTier->value,
- 'new_tier' => $newTier->value,
- 'margin' => $sku->margin_percent,
- 'volume' => $sku->annual_volume
- ];
- }
- }
- return $changes;
- }
+    public function recalculateAllTiers(): array
+    {
+        // Load all active SKUs with the commercial fields needed
+        $allSkus = Sku::whereNotNull('margin_percent')
+            ->whereNotNull('erp_cppc')
+            ->whereNotNull('annual_volume')
+            ->whereNotNull('erp_return_rate_pct')
+            ->get();
+
+        // Compute composite scores first
+        $scores = [];
+        foreach ($allSkus as $sku) {
+            $scores[$sku->id] = $this->calculateCommercialScore($sku);
+            $sku->update(['commercial_score' => $scores[$sku->id]]);
+        }
+
+        if (empty($scores)) {
+            return [];
+        }
+
+        // Derive percentile thresholds from composite scores
+        $sortedScores = collect($scores)->values()->sort()->values();
+        $count        = $sortedScores->count();
+
+        $heroCut    = $sortedScores[(int) floor($count * 0.8)] ?? $sortedScores->last();   // top 20%
+        $supportCut = $sortedScores[(int) floor($count * 0.3)] ?? $sortedScores->first();  // next 50%
+        $harvestCut = $sortedScores[(int) floor($count * 0.1)] ?? $sortedScores->first();  // next 20%
+
+        $changes = [];
+
+        foreach ($allSkus as $sku) {
+            $oldTier = $sku->tier;
+            $score   = $scores[$sku->id];
+
+            // Strategic hero override and kill conditions still apply
+            if ($sku->strategic_hero) {
+                $newTier = TierType::HERO;
+            } elseif ($this->shouldBeKilled($sku)) {
+                $newTier = TierType::KILL;
+            } else {
+                if ($score >= $heroCut) {
+                    $newTier = TierType::HERO;
+                } elseif ($score >= $supportCut) {
+                    $newTier = TierType::SUPPORT;
+                } elseif ($score >= $harvestCut) {
+                    $newTier = TierType::HARVEST;
+                } else {
+                    $newTier = TierType::KILL;
+                }
+            }
+
+            // Auto-promotion rule: Harvest SKUs with >30% QoQ velocity increase become Support
+            if ($oldTier === TierType::HARVEST && $newTier === TierType::HARVEST) {
+                $previousVelocity = (int) ($sku->previous_velocity_90d ?? 0);
+                if ($previousVelocity > 0) {
+                    $growth = ($sku->annual_volume - $previousVelocity) / $previousVelocity;
+                    if ($growth > 0.3) {
+                        $newTier = TierType::SUPPORT;
+                    }
+                }
+            }
+
+            if ($oldTier !== $newTier) {
+                $this->updateSkuTier($sku, $oldTier, $newTier);
+                $changes[] = [
+                    'sku_id'  => $sku->id,
+                    'sku_code'=> $sku->sku_code,
+                    'old_tier'=> $oldTier->value,
+                    'new_tier'=> $newTier->value,
+                    'margin'  => $sku->margin_percent,
+                    'volume'  => $sku->annual_volume,
+                    'score'   => $score,
+                ];
+            }
+        }
+
+        return $changes;
+    }
  
- public function calculateCommercialScore(Sku $sku): float
- {
-     $marginWeight = ($sku->margin_percent / 100) * 0.4;
-     
-     // Handle CPPC: lower is better, 1/cppc. If 0, assign max score component (0.25)
-     $cppcComponent = $sku->erp_cppc > 0 ? (1 / $sku->erp_cppc) : 0;
-     $cppcWeight = min($cppcComponent, 1) * 0.25; // Cap at 0.25
-     
-     $velocityWeight = min($sku->annual_volume / 1000, 1) * 0.2; // Normalize volume
-     
-     $returnRateWeight = (1 - ($sku->erp_return_rate_pct / 100)) * 0.15;
-     
-     return round(($marginWeight + $cppcWeight + $velocityWeight + $returnRateWeight) * 100, 4);
- }
+    public function calculateCommercialScore(Sku $sku): float
+    {
+        // Spec formula:
+        // Score = (margin% * 0.40) + (1/CPPC * 0.25) + (velocity * 0.20) + ((1 - return%) * 0.15)
+        $marginPct   = (float) ($sku->margin_percent ?? 0);
+        $cppc        = (float) ($sku->erp_cppc ?? 0);
+        $velocity    = (float) ($sku->annual_volume ?? 0);
+        $returnPct   = (float) ($sku->erp_return_rate_pct ?? 0);
 
- private function calculateTierForSku(Sku $sku, float $marginPercentile, int $volumePercentile): TierType
- {
-     if ($sku->strategic_hero) { return TierType::HERO; }
-     if ($this->shouldBeKilled($sku)) { return TierType::KILL; }
-     
-     $commercialScore = $this->calculateCommercialScore($sku);
-     $sku->update(['commercial_score' => $commercialScore]);
+        $marginTerm  = $marginPct * 0.40;
+        $cppcTerm    = ($cppc > 0 ? (1 / $cppc) : 0) * 0.25;
+        $velocityTerm= $velocity * 0.20;
+        $returnTerm  = (1 - ($returnPct / 100.0)) * 0.15;
 
-     // Tiering based on weighted commercial score
-     if ($commercialScore >= 60) { return TierType::HERO; }
-     if ($commercialScore >= 40) { return TierType::SUPPORT; }
-     if ($commercialScore > 0) { return TierType::HARVEST; }
-     return TierType::KILL;
- }
+        return round($marginTerm + $cppcTerm + $velocityTerm + $returnTerm, 4);
+    }
+
+    // calculateTierForSku is now inlined into recalculateAllTiers with percentile rules
  
  private function shouldBeKilled(Sku $sku): bool
  {

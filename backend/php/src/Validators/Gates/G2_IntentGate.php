@@ -1,29 +1,19 @@
 <?php
+
 namespace App\Validators\Gates;
 
 use App\Models\Sku;
+use App\Models\IntentTaxonomy;
 use App\Enums\GateType;
 use App\Validators\GateResult;
 use App\Validators\GateInterface;
 
 class G2_IntentGate implements GateInterface
 {
-    private const TAXONOMY = [
-        'Compatibility',
-        'Inspiration',
-        'Problem-Solving',
-        'Specification',
-        'Comparison',
-        'Installation', // Added
-        'Troubleshooting', // Added
-        'Regulatory', // Added - Mapped from Regulatory / Safety
-        'Replacement' // Added - Mapped from Replacement / Refill
-    ];
-
     public function validate(Sku $sku): GateResult
     {
         $primaryIntent = $sku->skuIntents->where('is_primary', true)->first();
-        
+
         if (!$primaryIntent) {
             return new GateResult(
                 gate: GateType::G2_IMAGES,
@@ -34,13 +24,18 @@ class G2_IntentGate implements GateInterface
         }
 
         $intentName = $primaryIntent->intent->name ?? '';
-        // Case-insensitive check
-        $taxonomyLow = array_map('strtolower', self::TAXONOMY);
-        if (!in_array(strtolower($intentName), $taxonomyLow)) {
+
+        // Look up in canonical intent_taxonomy (label + intent_key)
+        $taxonomyMatch = IntentTaxonomy::query()
+            ->whereRaw('LOWER(label) = ?', [strtolower($intentName)])
+            ->orWhereRaw('LOWER(intent_key) = ?', [strtolower(str_replace(' ', '_', $intentName))])
+            ->first();
+
+        if (!$taxonomyMatch) {
             return new GateResult(
                 gate: GateType::G2_IMAGES,
                 passed: false,
-                reason: "Gate G2 Failed: Intent '{$intentName}' not in approved taxonomy (Test 4.2 requirement).",
+                reason: "Gate G2 Failed: Intent '{$intentName}' not in locked 9-intent taxonomy.",
                 blocking: true
             );
         }
@@ -48,7 +43,7 @@ class G2_IntentGate implements GateInterface
         return new GateResult(
             gate: GateType::G2_IMAGES,
             passed: true,
-            reason: "Primary Intent '{$intentName}' validated.",
+            reason: "Primary Intent '{$intentName}' validated against canonical taxonomy.",
             blocking: false
         );
     }

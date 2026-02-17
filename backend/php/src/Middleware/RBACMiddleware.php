@@ -22,7 +22,8 @@ class RBACMiddleware
         $userRole = strtoupper($user->role->name);
         $allowedRoles = array_map('strtoupper', $allowedRoles);
 
-        if (!in_array($userRole, $allowedRoles) && !in_array('ADMIN', $userRole === 'ADMIN' ? ['ADMIN'] : $allowedRoles)) {
+        // No superuser bypass: ADMIN must still be explicitly allowed on a route
+        if (!in_array($userRole, $allowedRoles)) {
             return response()->json([
                 'error' => 'Forbidden',
                 'message' => "This action requires one of these roles: " . implode(', ', $allowedRoles)

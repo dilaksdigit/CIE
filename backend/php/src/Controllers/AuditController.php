@@ -7,6 +7,7 @@ use App\Services\PythonWorkerClient;
 use App\Utils\ResponseFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use App\Models\AuditLog;
 
 class AuditController {
     private $pythonClient;
@@ -23,7 +24,20 @@ class AuditController {
 
         if (!($queueResult['queued'] ?? false)) {
             Log::warning("Failed to queue audit for SKU {$sku_id}", $queueResult);
-            
+
+            AuditLog::create([
+                'entity_type' => 'audit',
+                'entity_id'   => $sku_id,
+                'action'      => 'audit_run',
+                'field_name'  => null,
+                'old_value'   => null,
+                'new_value'   => 'queued_failed',
+                'actor_id'    => auth()->id() ?? 'SYSTEM',
+                'actor_role'  => auth()->user()->role->name ?? 'system',
+                'ip_address'  => $request->ip(),
+                'user_agent'  => $request->userAgent(),
+                'timestamp'   => now(),
+            ]);
             // Fail-soft: return pending state even if Python is down
             return ResponseFormatter::format([
                 'sku_id' => $sku_id,
@@ -34,6 +48,20 @@ class AuditController {
         }
 
         Log::info("Audit queued for SKU {$sku_id}", ['audit_id' => $queueResult['audit_id'] ?? 'unknown']);
+
+        AuditLog::create([
+            'entity_type' => 'audit',
+            'entity_id'   => $sku_id,
+            'action'      => 'audit_run',
+            'field_name'  => null,
+            'old_value'   => null,
+            'new_value'   => 'queued',
+            'actor_id'    => auth()->id() ?? 'SYSTEM',
+            'actor_role'  => auth()->user()->role->name ?? 'system',
+            'ip_address'  => $request->ip(),
+            'user_agent'  => $request->userAgent(),
+            'timestamp'   => now(),
+        ]);
 
         return ResponseFormatter::format([
             'sku_id' => $sku_id,

@@ -1,25 +1,29 @@
 <?php
 namespace App\Validators;
+
 use App\Models\Sku;
+use App\Models\SkuGateStatus;
 use App\Enums\ValidationStatus;
 use App\Validators\Gates\G1_BasicInfoGate;
 use App\Validators\Gates\G2_IntentGate;
 use App\Validators\Gates\G3_SecondaryIntentGate;
 use App\Validators\Gates\G4_AnswerBlockGate;
+use App\Validators\Gates\G4_VectorGate;
 use App\Validators\Gates\G5_TechnicalGate;
 use App\Validators\Gates\G6_CommercialPolicyGate;
 use App\Validators\Gates\G7_ExpertGate;
 class GateValidator
 {
- private array $gates = [
- G1_BasicInfoGate::class,
-  G2_IntentGate::class,
-  G3_SecondaryIntentGate::class,
-  G4_AnswerBlockGate::class,
- G5_TechnicalGate::class,
-  G6_CommercialPolicyGate::class,
- G7_ExpertGate::class,
- ];
+    private array $gates = [
+        G1_BasicInfoGate::class,
+        G2_IntentGate::class,
+        G3_SecondaryIntentGate::class,
+        G4_AnswerBlockGate::class,
+        G4_VectorGate::class,
+        G5_TechnicalGate::class,
+        G6_CommercialPolicyGate::class,
+        G7_ExpertGate::class,
+    ];
  
  public function validateAll(Sku $sku, bool $preserveStatus = false): array
  {
@@ -28,21 +32,44 @@ class GateValidator
  $isDegraded = false;
  $blockingFailure = null;
  
-  foreach ($this->gates as $gateClass) {
-  $gate = new $gateClass();
- $result = $gate->validate($sku);
- $results[] = $result;
- 
- // Log the gate check
- \App\Models\ValidationLog::create([
- 'sku_id' => $sku->id,
- 'gate_type' => $result->gate,
- 'passed' => $result->passed,
- 'reason' => $result->reason,
- 'is_blocking' => $result->blocking,
- 'similarity_score' => $result->metadata['similarity'] ?? null,
-  'validated_by' => (function_exists('auth') && app()->bound('auth') && auth()->check()) ? auth()->id() : null
- ]);
+        foreach ($this->gates as $gateClass) {
+            $gate = new $gateClass();
+            $result = $gate->validate($sku);
+            $results[] = $result;
+
+            // Log the gate check (legacy validation_logs)
+            \App\Models\ValidationLog::create([
+                'sku_id' => $sku->id,
+                'gate_type' => $result->gate,
+                'passed' => $result->passed,
+                'reason' => $result->reason,
+                'is_blocking' => $result->blocking,
+                'similarity_score' => $result->metadata['similarity'] ?? null,
+                'validated_by' => (function_exists('auth') && app()->bound('auth') && auth()->check()) ? auth()->id() : null
+            ]);
+
+            // Canonical per-gate status (sku_gate_status table, using business SKU code as sku_id)
+            try {
+                $status = 'pass';
+                if (! $result->passed) {
+                    $status = ($result->metadata['degraded'] ?? false) ? 'pending' : 'fail';
+                }
+
+                SkuGateStatus::updateOrCreate(
+                    [
+                        'sku_id'    => $sku->sku_code,
+                        'gate_code' => $result->gate->value ?? (string) $result->gate,
+                    ],
+                    [
+                        'status'        => $status,
+                        'error_code'    => $result->metadata['error_code'] ?? null,
+                        'error_message' => $result->reason,
+                        'checked_at'    => now(),
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // Fail-soft: do not break validation if sku_gate_status table or FK not yet in place
+            }
  
  if (!$result->passed) {
  if ($result->blocking) {

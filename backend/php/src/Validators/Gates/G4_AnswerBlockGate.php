@@ -10,10 +10,10 @@ class G4_AnswerBlockGate implements GateInterface
 {
     public function validate(Sku $sku): GateResult
     {
-        $answer = $sku->ai_answer_block ?? '';
+        $answer = trim((string) ($sku->ai_answer_block ?? ''));
         $len = strlen($answer);
         
-        // Harvest SKUs have G4 suspended
+        // Harvest SKUs have G4 suspended (spec: Harvest maintenance mode)
         if ($sku->tier === 'HARVEST') {
             return new GateResult(
                 gate: GateType::G4_VECTOR,
@@ -39,6 +39,34 @@ class G4_AnswerBlockGate implements GateInterface
                 reason: "Gate G4 Failed: Answer Block too long ({$len}/300 max).",
                 blocking: true
             );
+        }
+
+        // Brand name / marketing guardrails
+        $brand = env('CIE_BRAND_NAME');
+        if ($brand) {
+            $normalizedAnswer = strtolower($answer);
+            $normalizedBrand  = strtolower($brand);
+
+            // Must NOT start with brand name
+            if (str_starts_with($normalizedAnswer, $normalizedBrand)) {
+                return new GateResult(
+                    gate: GateType::G4_VECTOR,
+                    passed: false,
+                    reason: "Gate G4 Failed: Answer Block must not start with the brand name ('{$brand}').",
+                    blocking: true
+                );
+            }
+
+            // Simple marketing-fluff heuristic: too many brand mentions relative to length
+            $brandCount = substr_count($normalizedAnswer, $normalizedBrand);
+            if ($brandCount >= 3 && $len < 400) {
+                return new GateResult(
+                    gate: GateType::G4_VECTOR,
+                    passed: false,
+                    reason: "Gate G4 Failed: Answer Block appears to be marketing copy (brand mentioned {$brandCount} times).",
+                    blocking: true
+                );
+            }
         }
 
         // Keyword check (stemmed)
