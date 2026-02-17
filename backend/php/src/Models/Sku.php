@@ -10,6 +10,10 @@ class Sku extends Model
     protected $keyType = 'string';
     public $incrementing = false;
 
+    protected $casts = [
+        'validation_status' => \App\Enums\ValidationStatus::class,
+    ];
+
     public function primaryCluster()
     {
         return $this->belongsTo(Cluster::class, 'primary_cluster_id');

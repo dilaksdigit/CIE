@@ -14,6 +14,7 @@ Route::post('/auth/register', [AuthController::class, 'register']);
 Route::middleware('auth')->group(function () {
     // SKU Management
     Route::get('/skus', [SkuController::class, 'index']);
+    Route::get('/skus/stats', [SkuController::class, 'stats']);
     Route::get('/skus/{id}', [SkuController::class, 'show']);
     Route::post('/skus', [SkuController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,ADMIN');
     Route::put('/skus/{id}', [SkuController::class, 'update'])->middleware('rbac:CONTENT_EDITOR,ADMIN');

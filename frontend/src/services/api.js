@@ -33,12 +33,12 @@ api.interceptors.response.use(
 // ====== Auth ======
 export const authApi = {
     login: (email, password) => api.post('/auth/login', { email, password }),
-    register: (name, email, password, password_confirmation, role) => api.post('/auth/register', { 
-        name, 
-        email, 
+    register: (name, email, password, password_confirmation, role) => api.post('/auth/register', {
+        name,
+        email,
         password,
         password_confirmation,
-        role 
+        role
     }),
 };
 
@@ -49,6 +49,7 @@ export const skuApi = {
     create: (data) => api.post('/skus', data),
     update: (id, data) => api.put(`/skus/${id}`, data),
     validate: (id) => api.post(`/skus/${id}/validate`),
+    stats: () => api.get('/skus/stats'),
 };
 
 // ====== Clusters ======

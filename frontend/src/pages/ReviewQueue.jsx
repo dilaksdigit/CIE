@@ -14,25 +14,38 @@ const ReviewQueue = () => {
     const navigate = useNavigate();
     const { addNotification } = useStore();
     const [skus, setSkus] = useState([]);
+    const [stats, setStats] = useState({
+        pending: 0,
+        approved_today: 0,
+        rejected_today: 0,
+        avg_review_time: '-'
+    });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        const fetchPending = async () => {
+        const fetchData = async () => {
             try {
-                const response = await skuApi.list();
-                const allSkus = response.data.data || [];
-                // Filter for PENDING status
-                const pending = allSkus.filter(s => s.validation_status === 'PENDING');
-                setSkus(pending);
+                const [listRes, statsRes] = await Promise.all([
+                    skuApi.list({ validation_status: 'PENDING' }),
+                    skuApi.stats()
+                ]);
+
+                setSkus(listRes.data.data || []);
+                setStats(statsRes.data.data || {
+                    pending: 0,
+                    approved_today: 0,
+                    rejected_today: 0,
+                    avg_review_time: '-'
+                });
             } catch (err) {
                 console.error('Failed to fetch review queue:', err);
-                setError('Failed to load review queue');
+                setError('Failed to load review queue. Ensure backend is running.');
             } finally {
                 setLoading(false);
             }
         };
-        fetchPending();
+        fetchData();
     }, []);
 
     const handleAction = async (id, action, skuCode) => {
@@ -41,7 +54,13 @@ const ReviewQueue = () => {
             const status = action === 'approve' ? 'VALID' : 'INVALID';
             await skuApi.update(id, { validation_status: status });
 
+            // Optimistic update: remove from list
             setSkus(prev => prev.filter(s => s.id !== id));
+
+            // Refresh stats to get accurate counts
+            const statsRes = await skuApi.stats();
+            setStats(statsRes.data.data);
+
             addNotification({
                 type: 'success',
                 message: `SKU ${skuCode} ${action === 'approve' ? 'approved' : 'rejected'} successfully`
@@ -60,10 +79,10 @@ const ReviewQueue = () => {
             </div>
 
             <div className="flex gap-12 mb-18">
-                <StatCard label="Pending" value={skus.length.toString()} color="var(--orange)" />
-                <StatCard label="Approved Today" value="8" color="var(--green)" />
-                <StatCard label="Rejected" value="3" color="var(--red)" />
-                <StatCard label="Avg Review Time" value="1.4m" sub="Target: <2 min" />
+                <StatCard label="Pending" value={stats.pending.toString()} color="var(--orange)" />
+                <StatCard label="Approved Today" value={stats.approved_today.toString()} color="var(--green)" />
+                <StatCard label="Rejected" value={stats.rejected_today.toString()} color="var(--red)" />
+                <StatCard label="Avg Review Time" value={stats.avg_review_time} sub="Target: <2 min" />
             </div>
 
             <div className="flex flex-col gap-10">
@@ -86,7 +105,7 @@ const ReviewQueue = () => {
                             <div className="flex items-center gap-12" style={{ fontSize: "0.7rem", color: "var(--text-dim)" }}>
                                 <span>Updated: {new Date(item.updated_at).toLocaleDateString()}</span>
                                 <span>•</span>
-                                <span className="flex items-center gap-4">Readiness: <ReadinessBar value={item.readiness_score} width={60} /></span>
+                                <span className="flex items-center gap-4">Readiness: <ReadinessBar value={item.readiness_score || 0} width={60} /></span>
                             </div>
                         </div>
                         <div className="flex gap-8">

@@ -21,7 +21,7 @@ class GateValidator
  G7_ExpertGate::class,
  ];
  
- public function validateAll(Sku $sku): array
+ public function validateAll(Sku $sku, bool $preserveStatus = false): array
  {
  $results = [];
  $overallPassed = true;
@@ -71,12 +71,21 @@ class GateValidator
  $nextAction = $blockingFailure ? $blockingFailure->reason : 'Fix validation errors before publication';
  }
  
- $sku->update([
- 'validation_status' => $status,
- 'can_publish' => $canPublish,
- 'last_validated_at' => now(),
- 'ai_validation_pending' => $isDegraded
- ]);
+        // Patch: If status is PENDING (submitted for review), do not overwrite it with automated status
+        // We still run validation to get the results, but we keep the PENDING state for the queue.
+        $currentStatus = $sku->fresh()->validation_status;
+        
+        $updateData = [
+            'can_publish' => $canPublish,
+            'last_validated_at' => now(),
+            'ai_validation_pending' => $isDegraded
+        ];
+
+        if (!$preserveStatus && $currentStatus !== ValidationStatus::PENDING) {
+            $updateData['validation_status'] = $status;
+        }
+
+        $sku->update($updateData);
  
  return [
  'sku_id' => $sku->id,

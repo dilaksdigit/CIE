@@ -29,26 +29,44 @@ const Dashboard = () => {
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState(null);
 
-    React.useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-                setError(null);
-                const response = await skuApi.list();
-                // Standard Laravel/ResponseFormatter structure: response.data.data
-                const skuData = response.data.data || [];
-                setSkus(skuData);
-            } catch (err) {
-                console.error('Failed to fetch SKUs:', err);
-                setError('Failed to load SKUs from database');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
-    }, []);
+    // Filter states
+    const [searchTerm, setSearchTerm] = React.useState('');
+    const [tierFilter, setTierFilter] = React.useState('All Tiers');
+    const [categoryFilter, setCategoryFilter] = React.useState('All Categories');
 
-    if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)', height: '100%' }}>Loading portfolio health...</div>;
+    // Debounce search
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            fetchData();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm, tierFilter, categoryFilter]);
+
+    const fetchData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const params = {};
+            if (searchTerm) params.search = searchTerm;
+            if (tierFilter !== 'All Tiers') params.tier = tierFilter.toUpperCase();
+            if (categoryFilter !== 'All Categories') params.category = categoryFilter;
+
+            const response = await skuApi.list(params);
+            const skuData = response.data.data || [];
+            setSkus(skuData);
+        } catch (err) {
+            console.error('Failed to fetch SKUs:', err);
+            setError('Failed to load SKUs from database');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Initial load
+    // React.useEffect(() => { fetchData(); }, []); // Handled by the debounced effect above
+
+    if (loading && skus.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)', height: '100%' }}>Loading portfolio health...</div>;
     if (error) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--red)', height: '100%' }}>{error}</div>;
 
     const heroCount = skus.filter(s => s.tier === "HERO").length;
@@ -115,15 +133,28 @@ const Dashboard = () => {
                 <div className="table-top">
                     <SectionTitle sub="Click any row to open SKU editor">All SKUs</SectionTitle>
                     <div className="flex gap-8">
-                        <input className="search-input" placeholder="Search SKUs..." />
-                        <select className="filter-select">
+                        <input
+                            className="search-input"
+                            placeholder="Search SKUs..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                        <select
+                            className="filter-select"
+                            value={tierFilter}
+                            onChange={(e) => setTierFilter(e.target.value)}
+                        >
                             <option>All Tiers</option>
                             <option>Hero</option>
                             <option>Support</option>
                             <option>Harvest</option>
                             <option>Kill</option>
                         </select>
-                        <select className="filter-select">
+                        <select
+                            className="filter-select"
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                        >
                             <option>All Categories</option>
                             <option>Cables</option>
                             <option>Lampshades</option>

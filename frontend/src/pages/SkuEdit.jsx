@@ -51,8 +51,13 @@ const SkuEdit = () => {
     const handleSave = async (isSubmit = false) => {
         setSaving(true);
         try {
-            console.log('Saving SKU:', { id, sku });
-            const response = await skuApi.update(id, sku);
+            const payload = { ...sku };
+            if (isSubmit) {
+                payload.validation_status = 'PENDING';
+            }
+
+            console.log('Saving SKU:', { id, payload });
+            const response = await skuApi.update(id, payload);
             console.log('Save response:', response);
             addNotification({
                 type: 'success',

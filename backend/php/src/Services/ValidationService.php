@@ -21,13 +21,13 @@ class ValidationService
     /**
      * Full validation pipeline for a SKU
      */
-    public function validate(Sku $sku): array
+    public function validate(Sku $sku, bool $preserveStatus = false): array
     {
         Log::info("Starting validation for SKU {$sku->id}", ['sku_code' => $sku->sku_code]);
 
         try {
             // Run GateValidator which orchestrates all gates (G1-G7)
-            $validationResults = $this->validator->validateAll($sku);
+            $validationResults = $this->validator->validateAll($sku, $preserveStatus);
             
             // Check if overall validation passed
             $isPassed = $validationResults['overall_passed'] ?? false;

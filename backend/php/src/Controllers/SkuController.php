@@ -20,6 +20,24 @@ class SkuController {
         if ($request->has('tier')) {
             $query->where('tier', $request->query('tier'));
         }
+
+        if ($request->has('cluster_id')) {
+            $query->where('primary_cluster_id', $request->query('cluster_id'));
+        }
+
+        // Keep "category" filter for backward compatibility (maps to clusters matching name)
+        if ($request->has('category')) {
+             $category = $request->query('category');
+             if ($category !== 'All Categories') {
+                 $query->whereHas('primaryCluster', function($q) use ($category) {
+                     $q->where('name', 'like', "%$category%");
+                 });
+             }
+        }
+
+        if ($request->has('validation_status')) {
+            $query->where('validation_status', $request->query('validation_status'));
+        }
         
         if ($request->has('search')) {
             $search = $request->query('search');
@@ -77,7 +95,7 @@ class SkuController {
 
             // Only update specific fields that are editable
             $updateData = [];
-            $editableFields = ['title', 'short_description', 'ai_answer_block', 'ai_answer_block_chars', 'meta_description', 'best_for', 'not_for', 'faq_data'];
+            $editableFields = ['title', 'short_description', 'ai_answer_block', 'ai_answer_block_chars', 'meta_description', 'best_for', 'not_for', 'faq_data', 'validation_status'];
             
             foreach ($editableFields as $field) {
                 if ($request->has($field)) {
@@ -90,7 +108,9 @@ class SkuController {
             $sku->update($updateData);
 
             // Run validation after update
-            $validationResult = $this->validationService->validate($sku->fresh());
+            // If validation_status was modified manually (e.g. Approved by Governor), preserve it.
+            $manualStatusUpdate = isset($updateData['validation_status']);
+            $validationResult = $this->validationService->validate($sku->fresh(), $manualStatusUpdate);
 
             return ResponseFormatter::format([
                 'sku' => $sku->fresh(['primaryCluster', 'skuIntents.intent']),
@@ -117,5 +137,27 @@ class SkuController {
             'sku' => $sku->fresh(['primaryCluster', 'skuIntents.intent']),
             'validation' => $validationResult
         ], "SKU created successfully", 201);
+    }
+
+    public function stats() {
+        $pending = Sku::where('validation_status', 'PENDING')->count();
+        $approved = Sku::where('validation_status', 'VALID')
+            ->whereDate('updated_at', \Carbon\Carbon::today())
+            ->count();
+        $rejected = Sku::where('validation_status', 'INVALID')
+            ->whereDate('updated_at', \Carbon\Carbon::today())
+            ->count();
+        
+        // Mock avg time for now
+        $avgTime = "1.4m"; 
+
+        return response()->json([
+            'data' => [
+                'pending' => $pending,
+                'approved_today' => $approved,
+                'rejected_today' => $rejected,
+                'avg_review_time' => $avgTime
+            ]
+        ]);
     }
 }
