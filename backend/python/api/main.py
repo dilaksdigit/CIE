@@ -9,6 +9,12 @@ import uuid
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
+#from src.vector.validation import validate_cluster_match
+#from src.vector.embedding import get_embedding
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.vector.validation import validate_cluster_match
 from src.vector.embedding import get_embedding
 

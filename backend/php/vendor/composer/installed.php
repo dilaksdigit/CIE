@@ -3,7 +3,7 @@
         'name' => 'cie/backend-php',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '9465a69a3f760dcddfa9dff27b9da9b759755fce',
+        'reference' => '71cf3a8b6c37b8125dac6ab07538eb9cc0dcd6d6',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -31,7 +31,7 @@
         'cie/backend-php' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '9465a69a3f760dcddfa9dff27b9da9b759755fce',
+            'reference' => '71cf3a8b6c37b8125dac6ab07538eb9cc0dcd6d6',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
