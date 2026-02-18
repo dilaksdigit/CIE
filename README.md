@@ -34,6 +34,8 @@ CIE is an enterprise-grade product content management system designed for scale 
 
 ## 🚀 Getting Started
 
+**👉 Start here**: [START_HERE.md](START_HERE.md) — Overview of what was implemented and how to verify everything works.
+
 ### Prerequisites
 - Docker & Docker Compose
 - Node.js 18+
@@ -54,16 +56,31 @@ CIE is an enterprise-grade product content management system designed for scale 
    make migrate
    make seed
    ```
+4. **Access Services**:
+   - Frontend: http://localhost:3000
+   - PHP API: http://localhost:9000/api
+   - Python API: http://localhost:5000
 
-### Local Development
-Refer to the [Implementation from Scratch Guide](file:///c:/Dilaksan/CIE/cie-v232/IMPLEMENTATION_FROM_SCRATCH.md) for detailed local setup instructions.
+### For Complete Setup Instructions
+Refer to [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) for detailed step-by-step local development setup.
 
-## 📖 Documentation
-Detailed documentation is available in the [`docs/`](file:///c:/Dilaksan/CIE/cie-v232/docs) directory:
-- [API Specification](file:///c:/Dilaksan/CIE/cie-v232/docs/api)
-- [Architecture Overview](file:///c:/Dilaksan/CIE/cie-v232/docs/architecture)
-- [Deployment Guide](file:///c:/Dilaksan/CIE/cie-v232/docs/deployment)
-- [User Guides](file:///c:/Dilaksan/CIE/cie-v232/docs/user_guides)
+## 📖 Documentation Guide
+
+| Document | Purpose | Read Time |
+|----------|---------|-----------|
+| [START_HERE.md](START_HERE.md) | **Quick overview** - What was built, how to verify | 5 min |
+| [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) | **Full setup guide** - Environment, database, docker, testing | 30 min |
+| [MASTER_SUMMARY.md](MASTER_SUMMARY.md) | **Architecture summary** - All 7 critical fixes | 10 min |
+| [WORKFLOW_WIRING_SUMMARY.md](WORKFLOW_WIRING_SUMMARY.md) | **Technical wiring** - How components connect | 20 min |
+| [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md) | **Test procedures** - Health checks, SKU creation, audits | 15 min |
+| [SYSTEM_ARCHITECTURE_COMPLETE.md](SYSTEM_ARCHITECTURE_COMPLETE.md) | **Architecture diagrams** - Visual overview of system | 10 min |
+| [API_REFERENCE_COMPLETE.md](docs/API_REFERENCE_COMPLETE.md) | **Full API docs** - All endpoints with examples | 30 min |
+
+**Recommended Reading Path**:
+1. START_HERE.md (5 min) → Overview
+2. QUICK_START_GUIDE.md (15 min) → Get it running
+3. IMPLEMENTATION_GUIDE.md (30 min) → Deep setup
+4. API_REFERENCE_COMPLETE.md (30 min) → For development
 
 ## ⚖️ License
 Internal Engine - Confidential (Refer to [LICENSE](file:///c:/Dilaksan/CIE/cie-v232/LICENSE))

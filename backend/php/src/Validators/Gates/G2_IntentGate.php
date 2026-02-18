@@ -16,7 +16,7 @@ class G2_IntentGate implements GateInterface
 
         if (!$primaryIntent) {
             return new GateResult(
-                gate: GateType::G2_IMAGES,
+                gate: GateType::G2_INTENT,
                 passed: false,
                 reason: 'Gate G2 Failed: Primary Intent required.',
                 blocking: true
@@ -33,7 +33,7 @@ class G2_IntentGate implements GateInterface
 
         if (!$taxonomyMatch) {
             return new GateResult(
-                gate: GateType::G2_IMAGES,
+                gate: GateType::G2_INTENT,
                 passed: false,
                 reason: "Gate G2 Failed: Intent '{$intentName}' not in locked 9-intent taxonomy.",
                 blocking: true
@@ -41,7 +41,7 @@ class G2_IntentGate implements GateInterface
         }
 
         return new GateResult(
-            gate: GateType::G2_IMAGES,
+            gate: GateType::G2_INTENT,
             passed: true,
             reason: "Primary Intent '{$intentName}' validated against canonical taxonomy.",
             blocking: false

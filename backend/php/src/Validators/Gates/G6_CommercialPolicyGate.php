@@ -15,7 +15,7 @@ class G6_CommercialPolicyGate implements GateInterface
         // G6: Kill-tier absolute lock
         if ($sku->tier === TierType::KILL) {
             return new GateResult(
-                gate: GateType::G6_COMMERCIAL,
+                gate: GateType::G6_COMMERCIAL_POLICY,
                 passed: false,
                 reason: 'Gate G6 Failed: KILL-tier SKUs must have zero effort. Any edit is a policy violation.',
                 blocking: true
@@ -38,7 +38,7 @@ class G6_CommercialPolicyGate implements GateInterface
 
                 if (!$tierAccess->contains($tierKey)) {
                     return new GateResult(
-                        gate: GateType::G6_COMMERCIAL,
+                        gate: GateType::G6_COMMERCIAL_POLICY,
                         passed: false,
                         reason: "Gate G6.1 Failed: Intent '{$intentName}' not permitted for tier '{$tierKey}'.",
                         blocking: true
@@ -48,7 +48,7 @@ class G6_CommercialPolicyGate implements GateInterface
         }
 
         return new GateResult(
-            gate: GateType::G6_COMMERCIAL,
+            gate: GateType::G6_COMMERCIAL_POLICY,
             passed: true,
             reason: 'Commercial tier and effort policy aligned.',
             blocking: false

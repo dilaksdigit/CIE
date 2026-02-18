@@ -16,7 +16,7 @@ class G4_AnswerBlockGate implements GateInterface
         // Harvest SKUs have G4 suspended (spec: Harvest maintenance mode)
         if ($sku->tier === 'HARVEST') {
             return new GateResult(
-                gate: GateType::G4_VECTOR,
+                gate: GateType::G4_ANSWER_BLOCK,
                 passed: true,
                 reason: 'G4 Suspended for Harvest tier.',
                 blocking: false
@@ -25,7 +25,7 @@ class G4_AnswerBlockGate implements GateInterface
 
         if ($len < 250) {
             return new GateResult(
-                gate: GateType::G4_VECTOR,
+                gate: GateType::G4_ANSWER_BLOCK,
                 passed: false,
                 reason: "Gate G4 Failed: Answer Block too short ({$len}/250 min).",
                 blocking: true
@@ -34,7 +34,7 @@ class G4_AnswerBlockGate implements GateInterface
 
         if ($len > 300) {
             return new GateResult(
-                gate: GateType::G4_VECTOR,
+                gate: GateType::G4_ANSWER_BLOCK,
                 passed: false,
                 reason: "Gate G4 Failed: Answer Block too long ({$len}/300 max).",
                 blocking: true
@@ -50,7 +50,7 @@ class G4_AnswerBlockGate implements GateInterface
             // Must NOT start with brand name
             if (str_starts_with($normalizedAnswer, $normalizedBrand)) {
                 return new GateResult(
-                    gate: GateType::G4_VECTOR,
+                    gate: GateType::G4_ANSWER_BLOCK,
                     passed: false,
                     reason: "Gate G4 Failed: Answer Block must not start with the brand name ('{$brand}').",
                     blocking: true
@@ -61,7 +61,7 @@ class G4_AnswerBlockGate implements GateInterface
             $brandCount = substr_count($normalizedAnswer, $normalizedBrand);
             if ($brandCount >= 3 && $len < 400) {
                 return new GateResult(
-                    gate: GateType::G4_VECTOR,
+                    gate: GateType::G4_ANSWER_BLOCK,
                     passed: false,
                     reason: "Gate G4 Failed: Answer Block appears to be marketing copy (brand mentioned {$brandCount} times).",
                     blocking: true
@@ -77,7 +77,7 @@ class G4_AnswerBlockGate implements GateInterface
             
             if ($keyword && strpos(strtolower($answer), $keyword) === false) {
                 return new GateResult(
-                    gate: GateType::G4_VECTOR,
+                    gate: GateType::G4_ANSWER_BLOCK,
                     passed: false,
                     reason: "Gate G4 Failed: Answer Block must contain the Primary Intent keyword ('{$keyword}').",
                     blocking: true
@@ -86,7 +86,7 @@ class G4_AnswerBlockGate implements GateInterface
         }
 
         return new GateResult(
-            gate: GateType::G4_VECTOR,
+            gate: GateType::G4_ANSWER_BLOCK,
             passed: true,
             reason: 'AI Answer Block meets length and keyword requirements.',
             blocking: false
