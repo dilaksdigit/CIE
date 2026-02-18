@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 
 from src.vector.validation import validate_cluster_match
 from src.vector.embedding import get_embedding
+from src.title.validation import validate_title as validate_title_rules, suggest_title as suggest_title_from_attrs
 
 # -------- Request body models (same field names as Flask request.json) --------
 
@@ -49,6 +50,18 @@ class QueueAuditRequest(BaseModel):
 class QueueBriefRequest(BaseModel):
     sku_id: Optional[str] = None
     title: Optional[str] = None
+
+
+class TitleValidateRequest(BaseModel):
+    title: str = ""
+    primary_intent: str = ""
+    cluster_id: str = ""
+
+
+class TitleSuggestRequest(BaseModel):
+    cluster_id: str = ""
+    primary_intent: str = ""
+    attributes: dict[str, Any] = {}
 
 
 # -------- App and in-memory queues (unchanged behavior) --------
@@ -84,6 +97,8 @@ def index():
             "/api/v1/sku/embed",
             "/api/v1/sku/similarity",
             "/api/v1/sku/validate",
+            "/api/v1/title/validate",
+            "/api/v1/title/suggest",
             "/queue/audit",
             "/queue/brief-generation",
         ],
@@ -177,6 +192,26 @@ def sku_similarity(body: SimilarityRequest):
             "message": PENDING_MESSAGE,
             "degraded_mode": True,
         }
+
+
+@app.post("/api/v1/title/validate")
+def title_validate(body: TitleValidateRequest):
+    """
+    Validate product title against CIE rules: pipe separator, intent before pipe, attributes after, no brand first, max 120 chars.
+    Returns { valid, issues[], suggested_fix }.
+    """
+    result = validate_title_rules(body.title, body.primary_intent, body.cluster_id)
+    return result
+
+
+@app.post("/api/v1/title/suggest")
+def title_suggest(body: TitleSuggestRequest):
+    """
+    Generate a CIE-compliant title from cluster_id + primary_intent + attributes (product_type, use_case, size, colour, fitting, etc.).
+    User can accept or edit.
+    """
+    suggested = suggest_title_from_attrs(body.cluster_id, body.primary_intent, body.attributes or {})
+    return {"suggested_title": suggested, "max_length": 120}
 
 
 @app.post("/api/v1/sku/validate")
