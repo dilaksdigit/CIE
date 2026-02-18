@@ -75,4 +75,17 @@ export const briefApi = {
     create: (data) => api.post('/briefs', data),
 };
 
+// ====== Config ======
+export const configApi = {
+    get: () => api.get('/config'),
+    update: (data) => api.put('/config', data),
+};
+
+// ====== Audit Results ======
+export const auditResultApi = {
+    getBySkuId: (skuId) => api.get(`/skus/${skuId}/audit-results`),
+    getDecayAlerts: () => api.get('/audit-results/decay-alerts'),
+    getWeeklyScores: () => api.get('/audit-results/weekly-scores'),
+};
+
 export default api;

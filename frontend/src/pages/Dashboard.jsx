@@ -85,8 +85,12 @@ const Dashboard = () => {
             <div className="flex gap-12 mb-20 flex-wrap">
                 <StatCard label="Total SKUs" value={skus.length.toString()} sub="Connected to API" />
                 <StatCard label="Avg Readiness" value={`${avgReadiness}%`} color={avgReadiness >= 70 ? 'var(--green)' : 'var(--orange)'} />
-                <StatCard label="AI Citation Rate" value="48%" sub="↑ 6% vs last week" color="var(--accent)" />
-                <StatCard label="Review Queue" value="12" sub="4 urgent" color="var(--orange)" />
+                <StatCard 
+                    label="AI Citation Rate" 
+                    value={`${Math.round(skus.length > 0 ? skus.reduce((a, s) => a + (s.ai_citation_rate || 0), 0) / skus.length : 0)}%`}
+                    color="var(--accent)" 
+                />
+                <StatCard label="Review Queue" value={`${skus.filter(s => s.validation_status === 'PENDING').length}`} sub={`${skus.filter(s => s.validation_status === 'FAILED').length} failed`} color="var(--orange)" />
             </div>
 
             <div className="flex gap-14 mb-20 flex-wrap">
@@ -190,7 +194,14 @@ const Dashboard = () => {
                                     <td>{sku.primaryCluster?.name || 'Unassigned'}</td>
                                     <td>
                                         <div className="flex gap-4 flex-wrap">
-                                            {GATES.map(g => <GateChip key={g.id} id={g.id} pass={false} compact />)}
+                                            {GATES.map(g => (
+                                                <GateChip 
+                                                    key={g.id} 
+                                                    id={g.id} 
+                                                    pass={sku.gates?.[g.id]?.passed || false} 
+                                                    compact 
+                                                />
+                                            ))}
                                         </div>
                                     </td>
                                     <td><ReadinessBar value={sku.readiness_score || 0} /></td>

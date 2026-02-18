@@ -22,11 +22,33 @@ const TIERS = {
 const SkuEdit = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { addNotification } = useStore();
+    const { user, addNotification } = useStore();
     const [activeTab, setActiveTab] = useState('content');
     const [sku, setSku] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [unauthorizedReason, setUnauthorizedReason] = useState(null);
+
+    // RBAC: Check if user can edit this SKU (role may be uppercase from backend)
+    const canEdit = () => {
+        if (!user) return false;
+        const role = (user.role || '').toLowerCase();
+        
+        // Admin and governors can edit any SKU
+        if (['admin', 'governor'].includes(role)) return true;
+        
+        // Editors can edit SUPPORT and HARVEST only
+        if (role === 'editor' && sku && ['SUPPORT', 'HARVEST'].includes(sku.tier)) return true;
+        
+        return false;
+    };
+
+    // RBAC: Check if user can approve SKU (role may be uppercase from backend)
+    const canApprove = () => {
+        if (!user) return false;
+        const role = (user.role || '').toLowerCase();
+        return ['admin', 'governor', 'portfolio_holder'].includes(role);
+    };
 
     useEffect(() => {
         if (!id) {
@@ -36,8 +58,18 @@ const SkuEdit = () => {
         const fetchSku = async () => {
             try {
                 const response = await skuApi.get(id);
-                // API returns { sku: {...}, instructions: {...} }
-                setSku(response.data.data.sku);
+                const skuData = response.data.data.sku;
+                
+                // Check authorization AFTER loading SKU
+                if (!user) {
+                    setUnauthorizedReason('Must be logged in');
+                    setSku(skuData);
+                } else if (!canEdit() && skuData) {
+                    setUnauthorizedReason(`Your role (${user.role}) cannot edit ${skuData.tier} tier SKUs`);
+                    setSku(skuData); // Show read-only
+                }
+                
+                setSku(skuData);
             } catch (err) {
                 console.error('Failed to fetch SKU:', err);
                 addNotification({ type: 'error', message: 'Failed to load SKU' });
@@ -46,9 +78,35 @@ const SkuEdit = () => {
             }
         };
         fetchSku();
-    }, [id]);
+    }, [id, user]);
 
     const handleSave = async (isSubmit = false) => {
+        // RBAC: Check permission
+        if (!canEdit()) {
+            addNotification({ type: 'error', message: 'You do not have permission to edit this SKU' });
+            return;
+        }
+
+        // Tier validation: Check if KILL
+        if (sku?.tier === 'KILL') {
+            addNotification({ type: 'error', message: 'Cannot edit KILL tier SKUs' });
+            return;
+        }
+
+        // Tier validation: Check gate requirements before submission
+        if (isSubmit) {
+            const blockedGates = [];
+            if (!sku.title || sku.title.length < 50) blockedGates.push('G2');
+            if (!sku.short_description || sku.short_description.length < 250) blockedGates.push('G4');
+            if (blockedGates.length > 0) {
+                addNotification({ 
+                    type: 'error', 
+                    message: `Cannot submit: Gates ${blockedGates.join(', ')} not passing` 
+                });
+                return;
+            }
+        }
+
         setSaving(true);
         try {
             const payload = { ...sku };
@@ -96,6 +154,21 @@ const SkuEdit = () => {
         );
     }
 
+    // Show unauthorized message if user lacks permission
+    if (unauthorizedReason) {
+        return (
+            <div style={{ padding: 60, textAlign: 'center' }}>
+                <div style={{ fontSize: '3rem', color: 'var(--orange)', marginBottom: 20 }}>🔒</div>
+                <h2 style={{ color: 'var(--text)' }}>Access Denied</h2>
+                <p style={{ color: 'var(--text-dim)', marginBottom: 24 }}>{unauthorizedReason}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 24 }}>
+                    You can still view this SKU in read-only mode. Contact your Portfolio Holder for editing access.
+                </p>
+                <button className="btn btn-secondary" onClick={() => navigate('/')}>Return to Dashboard</button>
+            </div>
+        );
+    }
+
     const currentTier = sku.tier || 'SUPPORT';
     const tierStyle = TIERS[currentTier] || TIERS.SUPPORT;
 
@@ -128,7 +201,7 @@ const SkuEdit = () => {
                     </div>
                 </div>
                 <div className="flex gap-8" style={{ flexShrink: 0, minWidth: 'fit-content' }}>
-                    {!isKillTier && (
+                    {!isKillTier && canEdit() && (
                         <>
                             <button className="btn btn-secondary" onClick={() => handleSave(false)} disabled={saving} style={{ cursor: 'pointer', pointerEvents: 'auto' }}>
                                 {saving ? 'Saving...' : 'Save Draft'}
@@ -141,6 +214,9 @@ const SkuEdit = () => {
                     {isKillTier && (
                         <div style={{ fontSize: '0.7rem', color: 'var(--red)', fontWeight: 600 }}>READ-ONLY MODE</div>
                     )}
+                    {!isKillTier && !canEdit() && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 600 }}>READ-ONLY (Insufficient Permission)</div>
+                    )}
                 </div>
             </div>
 
@@ -148,7 +224,13 @@ const SkuEdit = () => {
             <div className="card mb-14 flex items-center gap-12 flex-wrap" style={{ padding: '10px 18px' }}>
                 <span style={{ fontSize: "0.62rem", color: "var(--text-dim)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>GATE STATUS</span>
                 <div style={{ width: 1, height: 20, background: "var(--border)" }} />
-                {GATES.map(g => <GateChip key={g.id} id={g.id} pass={sku.readiness_score > 80} />)}
+                {GATES.map(g => (
+                    <GateChip 
+                        key={g.id} 
+                        id={g.id} 
+                        pass={sku.gates?.[g.id]?.passed || false} 
+                    />
+                ))}
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: "0.62rem", color: "var(--text-dim)" }}>Readiness:</span>
                     <ReadinessBar value={sku.readiness_score || 0} width={100} />
@@ -173,69 +255,171 @@ const SkuEdit = () => {
                         <div className="flex flex-col gap-14">
                             <div className="flex gap-12">
                                 <div style={{ flex: 1 }}>
-                                    <label className="field-label">G1 — Cluster ID <GateChip id="G1" pass={true} compact /></label>
+                                    <label className="field-label">G1 — Cluster ID <GateChip id="G1" pass={sku.gates?.G1?.passed || false} compact /></label>
                                     <div className="field-input readonly">{sku.primaryCluster?.name || 'Unassigned'}</div>
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                    <label className="field-label">G3 — Primary Intent <GateChip id="G3" pass={true} compact /></label>
-                                    <select className="field-input field-select">
+                                    <label className="field-label">G2 — Primary Intent <GateChip id="G2" pass={sku.gates?.G2?.passed || false} compact /></label>
+                                    <select className="field-input field-select" disabled={isKillTier || !canEdit()}
+                                        value={sku.primary_intent || ''} 
+                                        onChange={(e) => setSku({ ...sku, primary_intent: e.target.value })}>
+                                        <option value="">Select Intent</option>
                                         <option>Compatibility</option>
+                                        <option>Installation</option>
+                                        <option>Troubleshooting</option>
+                                        <option>Replacement</option>
+                                        <option>Comparison</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div>
                                 <label className="field-label">
-                                    G2 — Title <GateChip id="G2" pass={true} compact />
-                                    <span className="char-count">{sku.title?.length}/250 chars</span>
+                                    G3 — Title <GateChip id="G3" pass={sku.gates?.G3?.passed || false} compact />
+                                    <span className="char-count">{sku.title?.length || 0}/250 chars</span>
                                 </label>
                                 <input
-                                    className="field-input valid"
+                                    className={`field-input ${sku.title && sku.title.length >= 50 ? 'valid' : 'invalid'}`}
                                     value={sku.title || ''}
+                                    disabled={isKillTier || !canEdit()}
                                     onChange={(e) => setSku({ ...sku, title: e.target.value })}
+                                    placeholder="Product title (min 50 chars)"
                                 />
                             </div>
 
                             <div>
                                 <label className="field-label">
-                                    G4 — Answer Block <GateChip id="G4" pass={true} compact />
-                                    <span className="char-count">{sku.short_description?.length}/300 chars</span>
+                                    G4 — Answer Block <GateChip id="G4" pass={sku.gates?.G4?.passed || false} compact />
+                                    <span className="char-count">{sku.short_description?.length || 0}/300 chars</span>
                                 </label>
                                 <textarea
-                                    className="field-textarea valid"
+                                    className={`field-textarea ${sku.short_description && sku.short_description.length >= 250 ? 'valid' : 'invalid'}`}
                                     rows={3}
                                     value={sku.short_description || ''}
+                                    disabled={isKillTier || !canEdit()}
                                     onChange={(e) => setSku({ ...sku, short_description: e.target.value })}
+                                    placeholder="Answer block (min 250 chars, max 300)"
                                 />
                             </div>
 
                             <div className="vector-panel">
                                 <div>
-                                    <div className="field-label">VECTOR — Semantic Similarity <GateChip id="VEC" pass={true} compact /></div>
+                                    <div className="field-label">VECTOR — Semantic Similarity <GateChip id="VEC" pass={(sku.vector_similarity || 0) >= 0.72} compact /></div>
                                     <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Cosine similarity vs cluster intent vector</div>
                                 </div>
                                 <div style={{ textAlign: "right" }}>
-                                    <div className="vector-score" style={{ color: 'var(--green)' }}>0.87</div>
+                                    <div className="vector-score" style={{ color: (sku.vector_similarity || 0) >= 0.72 ? 'var(--green)' : 'var(--orange)' }}>
+                                        {(sku.vector_similarity || 0).toFixed(2)}
+                                    </div>
                                     <div className="vector-threshold">threshold: ≥0.72</div>
                                 </div>
                             </div>
+
+                            {/* G5: Best-For / Not-For (for HERO and SUPPORT tiers) */}
+                            {['HERO', 'SUPPORT'].includes(sku.tier) && (
+                                <>
+                                    <div>
+                                        <label className="field-label">
+                                            G5 — Best-For Applications <GateChip id="G5" pass={sku.gates?.G5?.passed || false} compact />
+                                        </label>
+                                        <textarea
+                                            className="field-textarea"
+                                            rows={2}
+                                            value={sku.best_for || ''}
+                                            disabled={isKillTier || !canEdit()}
+                                            onChange={(e) => setSku({ ...sku, best_for: e.target.value })}
+                                            placeholder="Applications where this product excels (min 2 items)"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="field-label">
+                                            G5 — Not-For Applications <GateChip id="G5" pass={sku.gates?.G5?.passed || false} compact />
+                                        </label>
+                                        <textarea
+                                            className="field-textarea"
+                                            rows={2}
+                                            value={sku.not_for || ''}
+                                            disabled={isKillTier || !canEdit()}
+                                            onChange={(e) => setSku({ ...sku, not_for: e.target.value })}
+                                            placeholder="Applications where this product should NOT be used (min 1 item)"
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {/* G6: Full Product Description (for HERO tier only) */}
+                            {sku.tier === 'HERO' && (
+                                <div>
+                                    <label className="field-label">
+                                        G6 — Full Description <GateChip id="G6" pass={sku.gates?.G6?.passed || false} compact />
+                                    </label>
+                                    <textarea
+                                        className="field-textarea"
+                                        rows={4}
+                                        value={sku.long_description || ''}
+                                        disabled={isKillTier || !canEdit()}
+                                        onChange={(e) => setSku({ ...sku, long_description: e.target.value })}
+                                        placeholder="Comprehensive product description for HERO tier (1000+ chars recommended)"
+                                    />
+                                </div>
+                            )}
+
+                            {/* G7: Expert Authority (for HERO and SUPPORT tiers) */}
+                            {['HERO', 'SUPPORT'].includes(sku.tier) && (
+                                <div>
+                                    <label className="field-label">
+                                        G7 — Expert Authority <GateChip id="G7" pass={sku.gates?.G7?.passed || false} compact />
+                                    </label>
+                                    <input
+                                        className="field-input"
+                                        type="text"
+                                        value={sku.expert_authority_name || ''}
+                                        disabled={isKillTier || !canEdit()}
+                                        onChange={(e) => setSku({ ...sku, expert_authority_name: e.target.value })}
+                                        placeholder="Expert name or organization providing authority"
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {activeTab === 'faq' && (
                         <div className="card">
                             <SectionTitle sub="Auto-generated from golden query set — editable by editors">FAQ Templates</SectionTitle>
-                            <div style={{ padding: "12px 0" }}>
-                                <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--accent)", marginBottom: 6 }}>Q: What fitting types work with this cable?</div>
-                                <div style={{ fontSize: "0.75rem", color: "var(--text)" }}>A: This cable is compatible with E27, B22, and GU10 lamp holders.</div>
-                            </div>
+                            {sku.faqs && sku.faqs.length > 0 ? (
+                                <div style={{ padding: "12px 0" }}>
+                                    {sku.faqs.map((faq, idx) => (
+                                        <div key={idx} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--border-light)' }}>
+                                            <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--accent)", marginBottom: 6 }}>Q: {faq.question}</div>
+                                            <div style={{ fontSize: "0.75rem", color: "var(--text)" }}>A: {faq.answer}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div style={{ padding: "12px 0", color: 'var(--text-dim)', fontSize: '0.75rem' }}>No FAQs available. FAQs are auto-generated from the AI audit process.</div>
+                            )}
                         </div>
                     )}
 
                     {activeTab === 'history' && (
                         <div className="card">
                             <SectionTitle sub="Immutable audit trail for this SKU">Change History</SectionTitle>
-                            <div style={{ padding: "10px 0", color: 'var(--text-dim)', fontSize: '0.75rem' }}>No recent history found for this SKU.</div>
+                            {sku.history && sku.history.length > 0 ? (
+                                <div style={{ padding: "10px 0" }}>
+                                    {sku.history.map((entry, idx) => (
+                                        <div key={idx} style={{ padding: "8px 0", borderBottom: '1px solid var(--border-light)', fontSize: '0.75rem' }}>
+                                            <div style={{ color: 'var(--text)', fontWeight: 600 }}>
+                                                {entry.user_name} · {new Date(entry.created_at).toLocaleString()}
+                                            </div>
+                                            <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                                                {entry.action}: {entry.old_value} → {entry.new_value}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div style={{ padding: "10px 0", color: 'var(--text-dim)', fontSize: '0.75rem' }}>No change history available yet.</div>
+                            )}
                         </div>
                     )}
                 </div>

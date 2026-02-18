@@ -1,61 +1,184 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { TierBadge } from '../components/common/UIComponents';
+import { skuApi } from '../services/api';
+import useStore from '../store';
 
 const TierMgmt = () => {
-    const data = [
-        { id: "CBL-BLK-3C-3M", current: "hero", score: 87.4, proposed: "hero", reason: "Score stable", override: false },
-        { id: "LMP-OPL-DRM-M", current: "support", score: 71.2, proposed: "support", reason: "Score stable", override: false },
-        { id: "CBL-GRY-3C-1M", current: "harvest", score: 42.1, proposed: "kill", reason: "Below threshold 3 months", override: true },
-        { id: "PND-BRS-IND-L", current: "hero", score: 88.9, proposed: "hero", reason: "Score stable", override: false },
-    ];
+    const { user, addNotification } = useStore();
+    const [tierRequests, setTierRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [approving, setApproving] = useState({});
+
+    // RBAC: Check if user can approve tiers (role may be uppercase from backend)
+    const role = (user?.role || '').toLowerCase();
+    const canApprove = ['admin', 'portfolio_holder', 'finance_director'].includes(role);
+    const isFinanceDirector = role === 'finance_director';
+    const isPortfolioHolder = role === 'portfolio_holder';
+
+    useEffect(() => {
+        const fetchTierRequests = async () => {
+            try {
+                // API endpoint needed: GET /tier-reassignments?status=pending
+                const response = await skuApi.list({ status: 'pending_tier_change' });
+                const requests = response.data.data || [];
+                setTierRequests(requests.map(sku => ({
+                    id: sku.id,
+                    sku_code: sku.sku_code,
+                    current: sku.tier,
+                    score: sku.readiness_score,
+                    proposed: sku.proposed_tier || sku.tier,
+                    reason: sku.tier_change_reason || 'Score update',
+                    override: sku.tier !== sku.proposed_tier,
+                    portfolio_holder_approved: sku.portfolio_holder_approved,
+                    finance_director_approved: sku.finance_director_approved,
+                })));
+            } catch (err) {
+                console.error('Failed to fetch tier requests:', err);
+                addNotification({ type: 'error', message: 'Failed to load tier requests' });
+                // Fallback to empty list
+                setTierRequests([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchTierRequests();
+    }, []);
+
+    const handleApprove = async (skuId) => {
+        if (!canApprove) {
+            addNotification({ type: 'error', message: 'You do not have permission to approve tier changes' });
+            return;
+        }
+
+        setApproving(prev => ({ ...prev, [skuId]: true }));
+        try {
+            const approvalType = isFinanceDirector ? 'FINANCE' : 'PORTFOLIO_HOLDER';
+            // API endpoint needed: POST /skus/{id}/approve-tier-change
+            await skuApi.update(skuId, { tier_approval: approvalType });
+            
+            addNotification({ 
+                type: 'success', 
+                message: `Tier change approved by ${approvalType.replace('_', ' ')}` 
+            });
+
+            // Refresh the list
+            const response = await skuApi.list({ status: 'pending_tier_change' });
+            const requests = response.data.data || [];
+            setTierRequests(requests.map(sku => ({
+                id: sku.id,
+                sku_code: sku.sku_code,
+                current: sku.tier,
+                score: sku.readiness_score,
+                proposed: sku.proposed_tier || sku.tier,
+                reason: sku.tier_change_reason || 'Score update',
+                override: sku.tier !== sku.proposed_tier,
+                portfolio_holder_approved: sku.portfolio_holder_approved,
+                finance_director_approved: sku.finance_director_approved,
+            })));
+        } catch (err) {
+            console.error('Approval failed:', err);
+            addNotification({ type: 'error', message: 'Failed to approve tier change' });
+        } finally {
+            setApproving(prev => ({ ...prev, [skuId]: false }));
+        }
+    };
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>Loading tier requests...</div>;
 
     return (
         <div>
             <div className="mb-20">
                 <h1 className="page-title">Tier Management</h1>
-                <div className="page-subtitle">Finance + Portfolio Holders — dual approval required for manual overrides</div>
+                <div className="page-subtitle">Finance + Portfolio Holders — dual approval required for tier changes</div>
             </div>
 
-            <div className="data-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>Current Tier</th>
-                            <th>Score</th>
-                            <th>Proposed</th>
-                            <th>Reason</th>
-                            <th>Override</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {data.map(row => (
-                            <tr key={row.id}>
-                                <td className="mono" style={{ fontSize: '0.75rem' }}>{row.id}</td>
-                                <td><TierBadge tier={row.current} size="xs" /></td>
-                                <td className="mono">{row.score}</td>
-                                <td>
-                                    {row.proposed !== row.current ? (
-                                        <div className="flex items-center gap-4">
-                                            <TierBadge tier={row.current} size="xs" />
-                                            <span style={{ color: "var(--text-dim)" }}>→</span>
-                                            <TierBadge tier={row.proposed} size="xs" />
-                                        </div>
-                                    ) : <TierBadge tier={row.proposed} size="xs" />}
-                                </td>
-                                <td style={{ fontSize: '0.7rem' }}>{row.reason}</td>
-                                <td>
-                                    {row.override ? (
-                                        <button className="btn btn-reject btn-sm">Approve (1/2)</button>
-                                    ) : <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>—</span>}
-                                </td>
+            {!canApprove && (
+                <div style={{
+                    padding: '12px 16px',
+                    background: 'var(--orange-bg)',
+                    border: '1px solid var(--orange)',
+                    borderRadius: 6,
+                    marginBottom: 20,
+                    color: 'var(--orange)',
+                    fontSize: '0.75rem'
+                }}>
+                    🔒 Read-only mode. Only Portfolio Holders and Finance Directors can approve tier changes.
+                </div>
+            )}
+
+            {tierRequests.length === 0 ? (
+                <div style={{
+                    padding: 40,
+                    textAlign: 'center',
+                    color: 'var(--text-dim)',
+                    fontSize: '0.9rem'
+                }}>
+                    No pending tier changes at this time.
+                </div>
+            ) : (
+                <div className="data-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Current Tier</th>
+                                <th>Score</th>
+                                <th>Proposed</th>
+                                <th>Reason</th>
+                                <th>Approvals</th>
+                                <th>Action</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            <div className="alert-banner danger">
-                ⚠ Manual tier override requires DUAL APPROVAL: Portfolio Holder + Finance Director. Both must sign off before tier changes.
+                        </thead>
+                        <tbody>
+                            {tierRequests.map(row => (
+                                <tr key={row.id}>
+                                    <td className="mono" style={{ fontSize: '0.75rem' }}>{row.sku_code}</td>
+                                    <td><TierBadge tier={row.current} size="xs" /></td>
+                                    <td className="mono">{row.score}</td>
+                                    <td>
+                                        {row.proposed !== row.current ? (
+                                            <div className="flex items-center gap-4">
+                                                <TierBadge tier={row.current} size="xs" />
+                                                <span style={{ color: "var(--text-dim)" }}>→</span>
+                                                <TierBadge tier={row.proposed} size="xs" />
+                                            </div>
+                                        ) : <TierBadge tier={row.proposed} size="xs" />}
+                                    </td>
+                                    <td style={{ fontSize: '0.7rem' }}>{row.reason}</td>
+                                    <td style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                                        <div className="flex gap-4 items-center">
+                                            <span title="Portfolio Holder">
+                                                {row.portfolio_holder_approved ? '✓ PH' : '○ PH'}
+                                            </span>
+                                            <span title="Finance Director">
+                                                {row.finance_director_approved ? '✓ FD' : '○ FD'}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {row.override && canApprove && (
+                                            <button 
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => handleApprove(row.id)}
+                                                disabled={approving[row.id]}
+                                                title={isFinanceDirector ? "Approve as Finance Director" : "Approve as Portfolio Holder"}
+                                            >
+                                                {approving[row.id] ? 'Approving...' : `Approve (${(row.portfolio_holder_approved ? 1 : 0) + (row.finance_director_approved ? 1 : 0)}/2)`}
+                                            </button>
+                                        )}
+                                        {!row.override && (
+                                            <span style={{ fontSize: "0.65rem", color: "var(--text-dim)" }}>Auto (no manual override)</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            <div className="alert-banner danger" style={{ marginTop: 20 }}>
+                ⏳ DUAL APPROVAL REQUIRED: Tier changes need both Portfolio Holder AND Finance Director approval before applying. Review the rationale carefully.
             </div>
         </div>
     );
