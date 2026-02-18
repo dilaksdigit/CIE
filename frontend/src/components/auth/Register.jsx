@@ -9,7 +9,7 @@ const Register = () => {
         email: '',
         password: '',
         password_confirmation: '',
-        role: 'editor'
+        role: 'content_editor'
     });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -130,10 +130,15 @@ const Register = () => {
                             onChange={handleChange}
                             required
                         >
-                            <option value="editor">Content Editor (Create & Edit SKUs)</option>
-                            <option value="governor">SEO Governor (Cluster Management)</option>
-                            <option value="analyst">AI Operations (Audit & Reports)</option>
-                            <option value="admin">Administrator (Full Access)</option>
+                            <option value="content_editor">Content Editor (Edit SKU content, SUPPORT/HARVEST)</option>
+                            <option value="product_specialist">Product Specialist (Expert authority & safety certs)</option>
+                            <option value="seo_governor">SEO Governor (Clusters, intent taxonomy)</option>
+                            <option value="channel_manager">Channel Manager (Readiness, channel mappings)</option>
+                            <option value="ai_ops">AI Ops (Run audits, golden queries, decay monitor)</option>
+                            <option value="portfolio_holder">Portfolio Holder (Approve tier changes, publish)</option>
+                            <option value="finance">Finance (ERP sync, tier recalculation, dual approval)</option>
+                            <option value="admin">Admin (Config, user management — no SKU content edit)</option>
+                            <option value="viewer">Viewer (Read-only)</option>
                         </select>
                     </div>
 

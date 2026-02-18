@@ -21,9 +21,19 @@ export const TrafficLight = ({ value }) => {
 };
 
 // ─── ROLE BADGE ─────────────────────────────────────
-export const RoleBadge = ({ role }) => (
-    <span className={`role-badge ${role}`}>{role}</span>
-);
+const roleLabel = (r) => {
+    if (!r) return '';
+    const s = String(r).trim();
+    return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+export const RoleBadge = ({ role }) => {
+    const normalized = role ? String(role).toLowerCase().replace(/\s+/g, '_') : '';
+    return (
+        <span className={`role-badge ${normalized}`} title={role}>
+            {roleLabel(role)}
+        </span>
+    );
+};
 
 // ─── READINESS BAR ──────────────────────────────────
 export const ReadinessBar = ({ value, width = 80 }) => (

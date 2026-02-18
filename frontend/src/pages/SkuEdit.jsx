@@ -9,8 +9,16 @@ import {
     TrafficLight,
     GATES
 } from '../components/common/UIComponents';
-import { skuApi } from '../services/api';
+import { skuApi, clusterApi, taxonomyApi } from '../services/api';
 import useStore from '../store';
+import {
+    canEditSkuAny,
+    canEditContentFieldsForTier,
+    canEditExpertAuthority,
+    canAssignCluster,
+    canPublishSku,
+} from '../lib/rbac';
+import { getTierBanner, isFieldEnabledForTier, getMaxSecondaryIntents, normalizeTier } from '../lib/tierFieldMap';
 
 const TIERS = {
     HERO: { label: "HERO", color: "#8B6914", bg: "#FDF6E3", border: "#E8D5A0" },
@@ -28,27 +36,15 @@ const SkuEdit = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [unauthorizedReason, setUnauthorizedReason] = useState(null);
+    const [clusters, setClusters] = useState([]);
+    const [intentsForTier, setIntentsForTier] = useState([]);
 
-    // RBAC: Check if user can edit this SKU (role may be uppercase from backend)
-    const canEdit = () => {
-        if (!user) return false;
-        const role = (user.role || '').toLowerCase();
-        
-        // Admin and governors can edit any SKU
-        if (['admin', 'governor'].includes(role)) return true;
-        
-        // Editors can edit SUPPORT and HARVEST only
-        if (role === 'editor' && sku && ['SUPPORT', 'HARVEST'].includes(sku.tier)) return true;
-        
-        return false;
-    };
-
-    // RBAC: Check if user can approve SKU (role may be uppercase from backend)
-    const canApprove = () => {
-        if (!user) return false;
-        const role = (user.role || '').toLowerCase();
-        return ['admin', 'governor', 'portfolio_holder'].includes(role);
-    };
+    // RBAC: field-level permissions (see frontend/src/lib/rbac.js)
+    const canEditContent = () => sku && canEditContentFieldsForTier(user, sku);
+    const canEditExpert = () => sku && canEditExpertAuthority(user, sku);
+    const canEditCluster = () => canAssignCluster(user);
+    const canSubmitForReview = () => sku && canPublishSku(user, sku);
+    const canEditAny = () => sku && canEditSkuAny(user, sku);
 
     useEffect(() => {
         if (!id) {
@@ -60,15 +56,14 @@ const SkuEdit = () => {
                 const response = await skuApi.get(id);
                 const skuData = response.data.data.sku;
                 
-                // Check authorization AFTER loading SKU
+                // Check authorization AFTER loading SKU (viewer or no edit permission = read-only)
                 if (!user) {
                     setUnauthorizedReason('Must be logged in');
-                    setSku(skuData);
-                } else if (!canEdit() && skuData) {
-                    setUnauthorizedReason(`Your role (${user.role}) cannot edit ${skuData.tier} tier SKUs`);
-                    setSku(skuData); // Show read-only
+                } else if (skuData && !canEditSkuAny(user, skuData)) {
+                    setUnauthorizedReason(`Your role (${user.role}) cannot edit this SKU. View-only access.`);
+                } else {
+                    setUnauthorizedReason(null);
                 }
-                
                 setSku(skuData);
             } catch (err) {
                 console.error('Failed to fetch SKU:', err);
@@ -80,29 +75,67 @@ const SkuEdit = () => {
         fetchSku();
     }, [id, user]);
 
+    // Fetch clusters for SEO Governor so they can assign G1
+    useEffect(() => {
+        if (!canAssignCluster(user)) return;
+        const fetchClusters = async () => {
+            try {
+                const res = await clusterApi.list();
+                const list = res.data?.data ?? res.data ?? [];
+                setClusters(Array.isArray(list) ? list : []);
+            } catch (err) {
+                console.error('Failed to load clusters:', err);
+            }
+        };
+        fetchClusters();
+    }, [user]);
+
+    // GET /api/taxonomy/intents?tier=X — allowed intents for this tier (Unified API 7.1)
+    useEffect(() => {
+        const tier = sku?.tier ? normalizeTier(sku.tier) : '';
+        if (!tier || tier === 'kill') {
+            setIntentsForTier([]);
+            return;
+        }
+        const fetchIntents = async () => {
+            try {
+                const res = await taxonomyApi.getIntents(tier);
+                const data = res.data?.data ?? res.data;
+                const list = data?.intents ?? [];
+                setIntentsForTier(Array.isArray(list) ? list : []);
+            } catch (err) {
+                console.error('Failed to load taxonomy intents:', err);
+                setIntentsForTier([]);
+            }
+        };
+        fetchIntents();
+    }, [sku?.tier]);
+
     const handleSave = async (isSubmit = false) => {
-        // RBAC: Check permission
-        if (!canEdit()) {
+        if (!user) return;
+        if (sku?.tier === 'KILL') {
+            addNotification({ type: 'error', message: 'Cannot edit KILL tier SKUs. All edit permissions revoked.' });
+            return;
+        }
+        if (!canEditAny()) {
             addNotification({ type: 'error', message: 'You do not have permission to edit this SKU' });
             return;
         }
 
-        // Tier validation: Check if KILL
-        if (sku?.tier === 'KILL') {
-            addNotification({ type: 'error', message: 'Cannot edit KILL tier SKUs' });
-            return;
-        }
-
-        // Tier validation: Check gate requirements before submission
+        // Content editors CANNOT override validation gate failures (RBAC critical rule)
         if (isSubmit) {
             const blockedGates = [];
             if (!sku.title || sku.title.length < 50) blockedGates.push('G2');
             if (!sku.short_description || sku.short_description.length < 250) blockedGates.push('G4');
             if (blockedGates.length > 0) {
-                addNotification({ 
-                    type: 'error', 
-                    message: `Cannot submit: Gates ${blockedGates.join(', ')} not passing` 
+                addNotification({
+                    type: 'error',
+                    message: `Cannot submit: Gates ${blockedGates.join(', ')} not passing. Gate overrides are not permitted.`,
                 });
+                return;
+            }
+            if (!canSubmitForReview()) {
+                addNotification({ type: 'error', message: 'Your role cannot submit this SKU for review' });
                 return;
             }
         }
@@ -197,25 +230,27 @@ const SkuEdit = () => {
                         <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>— {sku.title}</span>
                     </div>
                     <div style={{ fontSize: "0.62rem", color: tierStyle.color, marginTop: 4 }}>
-                        {currentTier} TIER: {isKillTier ? 'DECOMMISSIONED. All edits disabled per policy.' : (isHarvestTier ? 'HARVEST MODE: Specification intent only. Effort cap: 30m/quarter.' : (currentTier === 'HERO' ? 'Full content required. All 7 gates + vector must pass.' : 'Standard governance requirements apply.'))}
+                        {currentTier} TIER: {isKillTier ? (getTierBanner(currentTier) || 'No edits permitted.') : (isHarvestTier ? 'HARVEST MODE: Specification + problem_solving + compatibility only. Max 1 secondary. Effort cap: 30m/quarter.' : (currentTier === 'HERO' ? 'Full content required. All 7 gates + vector must pass.' : 'Standard governance requirements apply.'))}
                     </div>
                 </div>
                 <div className="flex gap-8" style={{ flexShrink: 0, minWidth: 'fit-content' }}>
-                    {!isKillTier && canEdit() && (
+                    {!isKillTier && canEditAny() && (
                         <>
                             <button className="btn btn-secondary" onClick={() => handleSave(false)} disabled={saving} style={{ cursor: 'pointer', pointerEvents: 'auto' }}>
                                 {saving ? 'Saving...' : 'Save Draft'}
                             </button>
-                            <button className="btn btn-primary" onClick={() => handleSave(true)} disabled={saving} style={{ cursor: 'pointer', pointerEvents: 'auto' }}>
-                                Submit for Review
-                            </button>
+                            {canSubmitForReview() && (
+                                <button className="btn btn-primary" onClick={() => handleSave(true)} disabled={saving} style={{ cursor: 'pointer', pointerEvents: 'auto' }}>
+                                    Submit for Review
+                                </button>
+                            )}
                         </>
                     )}
                     {isKillTier && (
-                        <div style={{ fontSize: '0.7rem', color: 'var(--red)', fontWeight: 600 }}>READ-ONLY MODE</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--red)', fontWeight: 600 }}>{getTierBanner(currentTier) || 'READ-ONLY — KILL tier'}</div>
                     )}
-                    {!isKillTier && !canEdit() && (
-                        <div style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 600 }}>READ-ONLY (Insufficient Permission)</div>
+                    {!isKillTier && !canEditAny() && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 600 }}>READ-ONLY</div>
                     )}
                 </div>
             </div>
@@ -256,19 +291,48 @@ const SkuEdit = () => {
                             <div className="flex gap-12">
                                 <div style={{ flex: 1 }}>
                                     <label className="field-label">G1 — Cluster ID <GateChip id="G1" pass={sku.gates?.G1?.passed || false} compact /></label>
-                                    <div className="field-input readonly">{sku.primaryCluster?.name || 'Unassigned'}</div>
+                                    {canEditCluster() ? (
+                                        <select
+                                            className="field-input field-select"
+                                            value={sku.primary_cluster_id || sku.primaryCluster?.id || ''}
+                                            onChange={(e) => setSku({ ...sku, primary_cluster_id: e.target.value || null })}
+                                            disabled={isKillTier}
+                                        >
+                                            <option value="">Unassigned</option>
+                                            {clusters.map((cl) => (
+                                                <option key={cl.id} value={cl.id}>{cl.name || cl.id}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <>
+                                            <div className="field-input readonly">{sku.primaryCluster?.name || 'Unassigned'}</div>
+                                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 4 }}>Only SEO Governor can assign cluster</div>
+                                        </>
+                                    )}
                                 </div>
                                 <div style={{ flex: 1 }}>
                                     <label className="field-label">G2 — Primary Intent <GateChip id="G2" pass={sku.gates?.G2?.passed || false} compact /></label>
-                                    <select className="field-input field-select" disabled={isKillTier || !canEdit()}
+                                    <select className="field-input field-select" disabled={isKillTier || !canEditContent()}
                                         value={sku.primary_intent || ''} 
                                         onChange={(e) => setSku({ ...sku, primary_intent: e.target.value })}>
                                         <option value="">Select Intent</option>
-                                        <option>Compatibility</option>
-                                        <option>Installation</option>
-                                        <option>Troubleshooting</option>
-                                        <option>Replacement</option>
-                                        <option>Comparison</option>
+                                        {intentsForTier.length > 0
+                                            ? intentsForTier.map((intent) => (
+                                                <option key={intent.intent_id} value={intent.label || intent.intent_key}>{intent.label || intent.intent_key}</option>
+                                            ))
+                                            : (
+                                                <>
+                                                    <option>Compatibility</option>
+                                                    <option>Installation</option>
+                                                    <option>Troubleshooting</option>
+                                                    <option>Replacement</option>
+                                                    <option>Comparison</option>
+                                                    <option>Specification</option>
+                                                    <option>Problem-Solving</option>
+                                                    <option>Inspiration</option>
+                                                    <option>Regulatory</option>
+                                                </>
+                                            )}
                                     </select>
                                 </div>
                             </div>
@@ -281,26 +345,28 @@ const SkuEdit = () => {
                                 <input
                                     className={`field-input ${sku.title && sku.title.length >= 50 ? 'valid' : 'invalid'}`}
                                     value={sku.title || ''}
-                                    disabled={isKillTier || !canEdit()}
+                                    disabled={isKillTier || !canEditContent()}
                                     onChange={(e) => setSku({ ...sku, title: e.target.value })}
                                     placeholder="Product title (min 50 chars)"
                                 />
                             </div>
 
-                            <div>
-                                <label className="field-label">
-                                    G4 — Answer Block <GateChip id="G4" pass={sku.gates?.G4?.passed || false} compact />
-                                    <span className="char-count">{sku.short_description?.length || 0}/300 chars</span>
-                                </label>
-                                <textarea
-                                    className={`field-textarea ${sku.short_description && sku.short_description.length >= 250 ? 'valid' : 'invalid'}`}
-                                    rows={3}
-                                    value={sku.short_description || ''}
-                                    disabled={isKillTier || !canEdit()}
-                                    onChange={(e) => setSku({ ...sku, short_description: e.target.value })}
-                                    placeholder="Answer block (min 250 chars, max 300)"
-                                />
-                            </div>
+                            {isFieldEnabledForTier(currentTier, 'answer_block') && (
+                                <div>
+                                    <label className="field-label">
+                                        G4 — Answer Block <GateChip id="G4" pass={sku.gates?.G4?.passed || false} compact />
+                                        <span className="char-count">{sku.short_description?.length || 0}/300 chars</span>
+                                    </label>
+                                    <textarea
+                                        className={`field-textarea ${sku.short_description && sku.short_description.length >= 250 ? 'valid' : 'invalid'}`}
+                                        rows={3}
+                                        value={sku.short_description || ''}
+                                        disabled={isKillTier || !canEditContent()}
+                                        onChange={(e) => setSku({ ...sku, short_description: e.target.value })}
+                                        placeholder="Answer block (min 250 chars, max 300)"
+                                    />
+                                </div>
+                            )}
 
                             <div className="vector-panel">
                                 <div>
@@ -315,8 +381,8 @@ const SkuEdit = () => {
                                 </div>
                             </div>
 
-                            {/* G5: Best-For / Not-For (for HERO and SUPPORT tiers) */}
-                            {['HERO', 'SUPPORT'].includes(sku.tier) && (
+                            {/* G5: Best-For / Not-For — visible per tier (hero/support; hidden harvest/kill) */}
+                            {isFieldEnabledForTier(currentTier, 'best_for') && (
                                 <>
                                     <div>
                                         <label className="field-label">
@@ -326,7 +392,7 @@ const SkuEdit = () => {
                                             className="field-textarea"
                                             rows={2}
                                             value={sku.best_for || ''}
-                                            disabled={isKillTier || !canEdit()}
+                                            disabled={isKillTier || !canEditContent()}
                                             onChange={(e) => setSku({ ...sku, best_for: e.target.value })}
                                             placeholder="Applications where this product excels (min 2 items)"
                                         />
@@ -339,7 +405,7 @@ const SkuEdit = () => {
                                             className="field-textarea"
                                             rows={2}
                                             value={sku.not_for || ''}
-                                            disabled={isKillTier || !canEdit()}
+                                            disabled={isKillTier || !canEditContent()}
                                             onChange={(e) => setSku({ ...sku, not_for: e.target.value })}
                                             placeholder="Applications where this product should NOT be used (min 1 item)"
                                         />
@@ -347,8 +413,8 @@ const SkuEdit = () => {
                                 </>
                             )}
 
-                            {/* G6: Full Product Description (for HERO tier only) */}
-                            {sku.tier === 'HERO' && (
+                            {/* G6: Full Product Description (HERO only) */}
+                            {currentTier === 'HERO' && (
                                 <div>
                                     <label className="field-label">
                                         G6 — Full Description <GateChip id="G6" pass={sku.gates?.G6?.passed || false} compact />
@@ -357,15 +423,15 @@ const SkuEdit = () => {
                                         className="field-textarea"
                                         rows={4}
                                         value={sku.long_description || ''}
-                                        disabled={isKillTier || !canEdit()}
+                                        disabled={isKillTier || !canEditContent()}
                                         onChange={(e) => setSku({ ...sku, long_description: e.target.value })}
                                         placeholder="Comprehensive product description for HERO tier (1000+ chars recommended)"
                                     />
                                 </div>
                             )}
 
-                            {/* G7: Expert Authority (for HERO and SUPPORT tiers) */}
-                            {['HERO', 'SUPPORT'].includes(sku.tier) && (
+                            {/* G7: Expert Authority — visible per tier (hero/support; hidden harvest/kill) */}
+                            {isFieldEnabledForTier(currentTier, 'expert_authority') && (
                                 <div>
                                     <label className="field-label">
                                         G7 — Expert Authority <GateChip id="G7" pass={sku.gates?.G7?.passed || false} compact />
@@ -374,7 +440,7 @@ const SkuEdit = () => {
                                         className="field-input"
                                         type="text"
                                         value={sku.expert_authority_name || ''}
-                                        disabled={isKillTier || !canEdit()}
+                                        disabled={isKillTier || !canEditExpert()}
                                         onChange={(e) => setSku({ ...sku, expert_authority_name: e.target.value })}
                                         placeholder="Expert name or organization providing authority"
                                     />

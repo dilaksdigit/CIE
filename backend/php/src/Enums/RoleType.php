@@ -16,6 +16,7 @@ enum RoleType: string
     case FINANCE           = 'finance';
     case ADMIN             = 'admin';
     case SYSTEM            = 'system';
+    case VIEWER            = 'viewer';
 
     public static function fromDatabase(string $name): ?self
     {
@@ -29,6 +30,7 @@ enum RoleType: string
             'FINANCE'           => self::FINANCE,
             'ADMIN'             => self::ADMIN,
             'SYSTEM'            => self::SYSTEM,
+            'VIEWER'            => self::VIEWER,
             default             => null,
         };
     }

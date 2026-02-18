@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { configApi } from '../services/api';
 import useStore from '../store';
+import { canModifyConfig } from '../lib/rbac';
 
 const Config = () => {
     const { user, addNotification } = useStore();
@@ -10,8 +11,7 @@ const Config = () => {
     const [saving, setSaving] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
 
-    // RBAC: Check if user is admin (role may be uppercase from backend)
-    const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+    const canEditConfig = canModifyConfig(user);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -64,7 +64,7 @@ const Config = () => {
     }, []);
 
     const handleSaveConfig = async () => {
-        if (!isAdmin) {
+        if (!canEditConfig) {
             addNotification({ type: 'error', message: 'Only admins can modify configuration' });
             return;
         }
@@ -155,7 +155,7 @@ const Config = () => {
                     <h1 className="page-title">Configuration</h1>
                     <div className="page-subtitle">Admin only — system thresholds, vocabularies, and templates</div>
                 </div>
-                {isAdmin && (
+                {canEditConfig && (
                     <div className="flex gap-8">
                         {!isEditing ? (
                             <button className="btn btn-secondary" onClick={() => setIsEditing(true)}>
@@ -175,7 +175,7 @@ const Config = () => {
                 )}
             </div>
 
-            {!isAdmin && (
+            {!canEditConfig && (
                 <div style={{
                     padding: '12px 16px',
                     background: 'var(--orange-bg)',
@@ -199,7 +199,7 @@ const Config = () => {
                             <div key={field.key} className="flex justify-between items-center" style={{ padding: "8px 0", borderBottom: '1px solid var(--border-light)' }}>
                                 <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{field.label}</span>
                                 <div className="flex items-center gap-4">
-                                    {isEditing && isAdmin ? (
+                                    {isEditing && canEditConfig ? (
                                         <input
                                             type={field.type}
                                             value={editingConfig[section.key][field.key]}

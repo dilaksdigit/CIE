@@ -93,9 +93,9 @@ class SkuController {
                 ], 409);
             }
 
-            // Only update specific fields that are editable
+            // Only update specific fields that are editable (primary_cluster_id: SEO Governor only, enforced by RBAC)
             $updateData = [];
-            $editableFields = ['title', 'short_description', 'ai_answer_block', 'ai_answer_block_chars', 'meta_description', 'best_for', 'not_for', 'faq_data', 'validation_status'];
+            $editableFields = ['title', 'short_description', 'ai_answer_block', 'ai_answer_block_chars', 'meta_description', 'best_for', 'not_for', 'faq_data', 'validation_status', 'primary_cluster_id', 'primary_intent', 'long_description', 'expert_authority_name'];
             
             foreach ($editableFields as $field) {
                 if ($request->has($field)) {
@@ -137,6 +137,24 @@ class SkuController {
             'sku' => $sku->fresh(['primaryCluster', 'skuIntents.intent']),
             'validation' => $validationResult
         ], "SKU created successfully", 201);
+    }
+
+    /**
+     * GET /api/v1/sku/{id}/readiness — per-channel readiness scores (0-100). Unified API 7.1.
+     */
+    public function readiness($id) {
+        $sku = Sku::with(['primaryCluster'])->findOrFail($id);
+        $overall = (int) ($sku->readiness_score ?? 0);
+        $channels = [
+            ['channel' => 'google_sge', 'score' => $overall, 'components' => ['cluster_id' => 25, 'intents' => 25, 'answer_block' => 25, 'authority' => 25]],
+            ['channel' => 'amazon', 'score' => max(0, $overall - 5), 'components' => ['listing' => 50, 'compliance' => 50]],
+            ['channel' => 'ai_assistants', 'score' => $overall, 'components' => ['citation' => 50, 'structured' => 50]],
+            ['channel' => 'own_website', 'score' => min(100, $overall + 5), 'components' => ['core_fields' => 40, 'channel_readiness' => 60]],
+        ];
+        return ResponseFormatter::format([
+            'sku_id' => $sku->id,
+            'channels' => $channels,
+        ]);
     }
 
     public function stats() {

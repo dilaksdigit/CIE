@@ -75,6 +75,12 @@ export const briefApi = {
     create: (data) => api.post('/briefs', data),
 };
 
+// ====== Taxonomy (Unified API 7.1) ======
+/** GET /api/taxonomy/intents?tier=X — returns allowed intent enums for that tier */
+export const taxonomyApi = {
+    getIntents: (tier) => api.get('/taxonomy/intents', { params: tier ? { tier: tier.toLowerCase() } : {} }),
+};
+
 // ====== Config ======
 export const configApi = {
     get: () => api.get('/config'),

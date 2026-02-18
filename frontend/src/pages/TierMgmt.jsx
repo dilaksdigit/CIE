@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TierBadge } from '../components/common/UIComponents';
 import { skuApi } from '../services/api';
 import useStore from '../store';
+import { canApproveTierAsPortfolioHolder, canApproveTierAsFinance, canTriggerTierRecalculation } from '../lib/rbac';
 
 const TierMgmt = () => {
     const { user, addNotification } = useStore();
@@ -9,11 +10,10 @@ const TierMgmt = () => {
     const [loading, setLoading] = useState(true);
     const [approving, setApproving] = useState({});
 
-    // RBAC: Check if user can approve tiers (role may be uppercase from backend)
-    const role = (user?.role || '').toLowerCase();
-    const canApprove = ['admin', 'portfolio_holder', 'finance_director'].includes(role);
-    const isFinanceDirector = role === 'finance_director';
-    const isPortfolioHolder = role === 'portfolio_holder';
+    // DUAL sign-off: Portfolio Holder AND Finance must both approve manual tier changes
+    const canApproveAsPH = canApproveTierAsPortfolioHolder(user);
+    const canApproveAsFinance = canApproveTierAsFinance(user);
+    const canTriggerRecalc = canTriggerTierRecalculation(user);
 
     useEffect(() => {
         const fetchTierRequests = async () => {
@@ -45,6 +45,7 @@ const TierMgmt = () => {
     }, []);
 
     const handleApprove = async (skuId) => {
+        const canApprove = canApproveAsPH || canApproveAsFinance;
         if (!canApprove) {
             addNotification({ type: 'error', message: 'You do not have permission to approve tier changes' });
             return;
@@ -52,7 +53,7 @@ const TierMgmt = () => {
 
         setApproving(prev => ({ ...prev, [skuId]: true }));
         try {
-            const approvalType = isFinanceDirector ? 'FINANCE' : 'PORTFOLIO_HOLDER';
+            const approvalType = canApproveAsFinance ? 'FINANCE' : 'PORTFOLIO_HOLDER';
             // API endpoint needed: POST /skus/{id}/approve-tier-change
             await skuApi.update(skuId, { tier_approval: approvalType });
             
@@ -92,7 +93,7 @@ const TierMgmt = () => {
                 <div className="page-subtitle">Finance + Portfolio Holders — dual approval required for tier changes</div>
             </div>
 
-            {!canApprove && (
+            {!canApproveAsPH && !canApproveAsFinance && (
                 <div style={{
                     padding: '12px 16px',
                     background: 'var(--orange-bg)',
@@ -156,12 +157,12 @@ const TierMgmt = () => {
                                         </div>
                                     </td>
                                     <td>
-                                        {row.override && canApprove && (
+                                        {row.override && (canApproveAsPH || canApproveAsFinance) && (
                                             <button 
                                                 className="btn btn-secondary btn-sm"
                                                 onClick={() => handleApprove(row.id)}
                                                 disabled={approving[row.id]}
-                                                title={isFinanceDirector ? "Approve as Finance Director" : "Approve as Portfolio Holder"}
+                                                title={canApproveAsFinance ? "Approve as Finance" : "Approve as Portfolio Holder"}
                                             >
                                                 {approving[row.id] ? 'Approving...' : `Approve (${(row.portfolio_holder_approved ? 1 : 0) + (row.finance_director_approved ? 1 : 0)}/2)`}
                                             </button>

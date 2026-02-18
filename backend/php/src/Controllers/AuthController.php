@@ -12,12 +12,18 @@ use Illuminate\Support\Str;
 
 class AuthController {
     public function register(Request $request) {
+        $allowedRoles = [
+            'content_editor', 'product_specialist', 'seo_governor', 'channel_manager',
+            'ai_ops', 'portfolio_holder', 'finance', 'admin', 'system', 'viewer',
+            'editor', 'governor', 'analyst'  // legacy
+        ];
+
         // Validate input
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:6|confirmed',
-            'role' => 'required|string|in:editor,governor,analyst,admin'
+            'role' => 'required|string|in:' . implode(',', $allowedRoles)
         ]);
         
         if ($validator->fails()) {
@@ -30,20 +36,29 @@ class AuthController {
             $firstName = $nameParts[0];
             $lastName = $nameParts[1] ?? '';
             
-            // Map frontend roles to database role names
+            // Map frontend roles (snake_case) to database role names (UPPERCASE)
             $roleMapping = [
+                'content_editor' => 'CONTENT_EDITOR',
+                'product_specialist' => 'PRODUCT_SPECIALIST',
+                'seo_governor' => 'SEO_GOVERNOR',
+                'channel_manager' => 'CHANNEL_MANAGER',
+                'ai_ops' => 'AI_OPS',
+                'portfolio_holder' => 'PORTFOLIO_HOLDER',
+                'finance' => 'FINANCE',
+                'admin' => 'ADMIN',
+                'system' => 'SYSTEM',
+                'viewer' => 'VIEWER',
                 'editor' => 'CONTENT_EDITOR',
                 'governor' => 'SEO_GOVERNOR',
                 'analyst' => 'AI_OPS',
-                'admin' => 'ADMIN'
             ];
             
-            $roleName = $roleMapping[$request->input('role')] ?? 'VIEWER';
-            $role = Role::where('name', $roleName)->first();
-            
-            if (!$role) {
-                return response()->json(['error' => 'Role not found'], 400);
-            }
+            $inputRole = strtolower(trim($request->input('role')));
+            $roleName = $roleMapping[$inputRole] ?? strtoupper(str_replace('-', '_', $inputRole));
+            $role = Role::firstOrCreate(
+                ['name' => $roleName],
+                ['id' => Str::uuid()->toString()]
+            );
             
             // Create user with explicit ID generation
             $userId = Str::uuid()->toString();

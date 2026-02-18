@@ -7,6 +7,7 @@ import {
 } from '../components/common/UIComponents';
 import { auditApi } from '../services/api';
 import useStore from '../store';
+import { canRunAIAudit } from '../lib/rbac';
 
 const COLORS = {
     hero: "#8B6914",
@@ -22,7 +23,8 @@ const AiAudit = () => {
     const [decayAlerts, setDecayAlerts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const { addNotification } = useStore();
+    const { user, addNotification } = useStore();
+    const canRunAudit = canRunAIAudit(user);
 
     useEffect(() => {
         const fetchAuditData = async () => {
@@ -57,9 +59,16 @@ const AiAudit = () => {
 
     return (
         <div>
-            <div className="mb-20">
-                <h1 className="page-title">AI Audit Dashboard</h1>
-                <div className="page-subtitle">Weekly citation audit — 20 golden queries × 4 AI engines × 4 categories</div>
+            <div className="mb-20" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                    <h1 className="page-title">AI Audit Dashboard</h1>
+                    <div className="page-subtitle">Weekly citation audit — 20 golden queries × 4 AI engines × 4 categories</div>
+                </div>
+                {canRunAudit && (
+                    <button className="btn btn-primary" onClick={() => addNotification({ type: 'info', message: 'Audit run queued (AI Ops / Admin only)' })}>
+                        Run AI Audit
+                    </button>
+                )}
             </div>
 
             {loading && <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>Loading audit data...</div>}

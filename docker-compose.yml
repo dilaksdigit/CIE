@@ -33,7 +33,7 @@ services:
    - DB_USERNAME=cie_user
    - DB_PASSWORD=cie_password
    - REDIS_URL=redis://redis:6379/0
-   - PYTHON_API_URL=http://python-worker:5000
+   - PYTHON_API_URL=http://python-worker:8000
    - APP_NAME=CIE
    - APP_ENV=local
    - APP_DEBUG=true
@@ -41,8 +41,8 @@ services:
    - db
    - redis
   ports:
-   - "8000:8000"
- 
+   - "8080:8000"
+
  python-worker:
   build:
    context: ./backend/python
@@ -58,12 +58,12 @@ services:
    - REDIS_URL=redis://redis:6379/0
    - OPENAI_API_KEY=${OPENAI_API_KEY}
    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-   - PYTHON_API_URL=http://python-worker:5000
+   - PORT=8000
   depends_on:
    - db
    - redis
   ports:
-   - "5000:5000"
+   - "8000:8000"
  
  nginx:
   image: nginx:alpine
