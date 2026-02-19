@@ -3,6 +3,7 @@ namespace App\Validators;
 
 use App\Models\Sku;
 use App\Models\SkuGateStatus;
+use App\Models\AuditLog;
 use App\Enums\ValidationStatus;
 use App\Validators\Gates\G1_BasicInfoGate;
 use App\Validators\Gates\G2_IntentGate;
@@ -67,6 +68,24 @@ class GateValidator
                         'checked_at'    => now(),
                     ]
                 );
+
+                // §9 Audit: log gate check
+                try {
+                    AuditLog::create([
+                        'entity_type' => 'gate_status',
+                        'entity_id'   => $sku->id,
+                        'action'      => $result->passed ? 'gate_pass' : 'gate_fail',
+                        'field_name'  => $result->gate->value ?? (string) $result->gate,
+                        'old_value'   => null,
+                        'new_value'   => $result->passed ? 'pass' : 'fail',
+                        'user_id'     => (function_exists('auth') && auth()->check()) ? auth()->id() : null,
+                        'ip_address'  => request() ? request()->ip() : null,
+                        'user_agent'  => request() ? request()->userAgent() : null,
+                        'created_at'  => now(),
+                    ]);
+                } catch (\Throwable $auditEx) {
+                    // Fail-soft: do not break validation if audit_log missing columns
+                }
             } catch (\Throwable $e) {
                 // Fail-soft: do not break validation if sku_gate_status table or FK not yet in place
             }

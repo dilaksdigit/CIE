@@ -34,7 +34,24 @@ class ValidationService
             $isDegraded = $validationResults['is_degraded'] ?? false;
             $blockingFailure = $validationResults['blocking_failure'] ?? null;
 
-            // Determine final status
+            // Vector result comes from GateValidator (G5_VECTOR gate) — no duplicate call
+            $gates = $validationResults['gates'] ?? [];
+            $vectorValidation = null;
+            foreach ($gates as $g) {
+                $gateKey = $g['gate'] ?? '';
+                if ($gateKey === 'G5_VECTOR' || $gateKey === 'G4_VECTOR') {
+                    $vectorValidation = [
+                        'gate' => $gateKey,
+                        'valid' => $g['passed'] ?? false,
+                        'blocking' => $g['blocking'] ?? true,
+                        'reason' => $g['reason'] ?? '',
+                        'similarity' => $g['metadata']['similarity'] ?? 0,
+                    ];
+                    break;
+                }
+            }
+
+            // Determine final status (already incorporates gate results including vector)
             if ($blockingFailure) {
                 $status = ValidationStatus::INVALID;
                 $nextAction = "Fix validation errors before publication";
@@ -44,21 +61,6 @@ class ValidationService
             } else {
                 $status = ValidationStatus::VALID;
                 $nextAction = "Ready for publication";
-            }
-
-            // Optionally run Python vector validation if cluster assigned
-            $vectorValidation = null;
-            if ($sku->primary_cluster_id) {
-                $vectorValidation = $this->validateVector($sku);
-                
-                // If vector validation fails with blocking, adjust status
-                if (!($vectorValidation['valid'] ?? true) && ($vectorValidation['blocking'] ?? false)) {
-                    if ($status === ValidationStatus::VALID) {
-                        $status = ValidationStatus::DEGRADED;
-                        $isDegraded = true;
-                        $nextAction = "Vector similarity below threshold. Publication blocked pending validation.";
-                    }
-                }
             }
 
             // Log the validation result
@@ -79,7 +81,7 @@ class ValidationService
                 'valid' => $status === ValidationStatus::VALID,
                 'status' => $status,
                 'validation_log_id' => $validationLog->id,
-                'results' => $validationResults['results'] ?? [],
+                'results' => $validationResults['gates'] ?? $validationResults['results'] ?? [],
                 'next_action' => $nextAction,
                 'ai_validation_pending' => $isDegraded,
                 'blocking_failure' => $blockingFailure,
@@ -93,41 +95,6 @@ class ValidationService
                 'status' => ValidationStatus::INVALID,
                 'next_action' => 'Validation service error',
                 'error' => $e->getMessage(),
-            ];
-        }
-    }
-
-    /**
-     * Validate SKU vector against cluster
-     */
-    private function validateVector(Sku $sku): array
-    {
-        try {
-            $result = $this->pythonClient->validateVector(
-                description: $sku->description ?? '',
-                clusterId: (string)$sku->primary_cluster_id,
-                skuId: $sku->id
-            );
-
-            $threshold = env('SIMILARITY_THRESHOLD', 0.72);
-            $valid = ($result['similarity'] ?? 0) >= $threshold;
-
-            return array_merge($result, [
-                'gate' => 'G5_VECTOR',
-                'valid' => $valid,
-                'blocking' => !$valid,
-                'reason' => $valid 
-                    ? "Vector similarity {$result['similarity']} meets threshold {$threshold}"
-                    : "Vector similarity {$result['similarity']} below threshold {$threshold}"
-            ]);
-        } catch (\Exception $e) {
-            Log::error("Vector validation failed: {$e->getMessage()}");
-            return [
-                'gate' => 'G5_VECTOR',
-                'valid' => false,
-                'blocking' => false, // Fail-soft: don't block on service errors
-                'reason' => 'Vector validation unavailable (service degradation)',
-                'similarity' => 0
             ];
         }
     }

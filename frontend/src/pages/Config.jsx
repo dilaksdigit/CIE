@@ -3,6 +3,47 @@ import { configApi } from '../services/api';
 import useStore from '../store';
 import { canModifyConfig } from '../lib/rbac';
 
+const DEFAULT_CONFIG = {
+    gate_thresholds: {
+        answer_block_min: 250,
+        answer_block_max: 300,
+        title_max_length: 250,
+        vector_threshold: 0.72,
+        title_intent_min: 20,
+    },
+    tier_score_weights: {
+        margin_weight: 0.30,
+        velocity_weight: 0.30,
+        return_rate_weight: 0.20,
+        margin_rank_weight: 0.20,
+        hero_threshold: 75,
+    },
+    channel_thresholds: {
+        hero_compete_min: 85,
+        support_compete_min: 70,
+        harvest: "Excluded",
+        kill: "Excluded",
+        feed_regen_time: "02:00",
+    },
+    audit_settings: {
+        audit_day: "Monday",
+        audit_time: "06:00",
+        questions_per_category: 20,
+        engines: 4,
+        decay_trigger: "Week 3",
+    },
+};
+
+function normalizeConfig(raw) {
+    if (!raw || typeof raw !== 'object') return DEFAULT_CONFIG;
+    return {
+        gate_thresholds: { ...DEFAULT_CONFIG.gate_thresholds, ...(raw.gate_thresholds || {}) },
+        tier_score_weights: { ...DEFAULT_CONFIG.tier_score_weights, ...(raw.tier_score_weights || {}) },
+        channel_thresholds: { ...DEFAULT_CONFIG.channel_thresholds, ...(raw.channel_thresholds || {}) },
+        audit_settings: { ...DEFAULT_CONFIG.audit_settings, ...(raw.audit_settings || {}) },
+    };
+}
+
 const Config = () => {
     const { user, addNotification } = useStore();
     const [config, setConfig] = useState(null);
@@ -17,45 +58,16 @@ const Config = () => {
         const fetchConfig = async () => {
             try {
                 const response = await configApi.get();
-                const configData = response.data.data || response.data;
+                const raw = response.data?.data ?? response.data;
+                const configData = normalizeConfig(raw);
                 setConfig(configData);
-                setEditingConfig(JSON.parse(JSON.stringify(configData))); // Deep copy
+                setEditingConfig(JSON.parse(JSON.stringify(configData)));
             } catch (err) {
                 console.error('Failed to fetch config:', err);
                 addNotification({ type: 'error', message: 'Failed to load configuration' });
-                // Set default config as fallback
-                const defaultConfig = {
-                    gate_thresholds: {
-                        answer_block_min: 250,
-                        answer_block_max: 300,
-                        title_max_length: 250,
-                        vector_threshold: 0.72,
-                        title_intent_min: 20,
-                    },
-                    tier_score_weights: {
-                        margin_weight: 0.30,
-                        velocity_weight: 0.30,
-                        return_rate_weight: 0.20,
-                        margin_rank_weight: 0.20,
-                        hero_threshold: 75,
-                    },
-                    channel_thresholds: {
-                        hero_compete_min: 85,
-                        support_compete_min: 70,
-                        harvest: "Excluded",
-                        kill: "Excluded",
-                        feed_regen_time: "02:00",
-                    },
-                    audit_settings: {
-                        audit_day: "Monday",
-                        audit_time: "06:00",
-                        questions_per_category: 20,
-                        engines: 4,
-                        decay_trigger: "Week 3",
-                    },
-                };
-                setConfig(defaultConfig);
-                setEditingConfig(JSON.parse(JSON.stringify(defaultConfig)));
+                const configData = DEFAULT_CONFIG;
+                setConfig(configData);
+                setEditingConfig(JSON.parse(JSON.stringify(configData)));
             } finally {
                 setLoading(false);
             }
@@ -84,7 +96,7 @@ const Config = () => {
     };
 
     const handleCancel = () => {
-        setEditingConfig(JSON.parse(JSON.stringify(config)));
+        setEditingConfig(JSON.parse(JSON.stringify(config || DEFAULT_CONFIG)));
         setIsEditing(false);
     };
 
@@ -99,7 +111,7 @@ const Config = () => {
     };
 
     if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>Loading configuration...</div>;
-    if (!config) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--red)' }}>Failed to load configuration</div>;
+    const displayConfig = config || DEFAULT_CONFIG;
 
     const sections = [
         {
@@ -202,7 +214,7 @@ const Config = () => {
                                     {isEditing && canEditConfig ? (
                                         <input
                                             type={field.type}
-                                            value={editingConfig[section.key][field.key]}
+                                            value={editingConfig?.[section.key]?.[field.key] ?? ''}
                                             onChange={(e) => {
                                                 const value = field.type === 'number' ? parseFloat(e.target.value) : e.target.value;
                                                 updateNestedValue(section.key, field.key, value);
@@ -230,7 +242,7 @@ const Config = () => {
                                             fontFamily: "var(--mono)",
                                             fontWeight: 600,
                                         }}>
-                                            {config[section.key][field.key]}
+                                            {(displayConfig[section.key] || {})[field.key]}
                                         </span>
                                     )}
                                     {field.unit && <span style={{ fontSize: "0.55rem", color: "var(--text-dim)" }}>{field.unit}</span>}

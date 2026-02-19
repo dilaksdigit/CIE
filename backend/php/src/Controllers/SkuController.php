@@ -2,16 +2,27 @@
 namespace App\Controllers;
 
 use App\Models\Sku;
+use App\Models\AuditLog;
 use App\Services\ValidationService;
+use App\Services\ReadinessScoreService;
+use App\Services\FaqSuggestionService;
+use App\Services\PermissionService;
 use App\Utils\ResponseFormatter;
+use App\Enums\ValidationStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class SkuController {
     protected $validationService;
+    protected $readinessScoreService;
+    protected $faqSuggestionService;
+    protected $permissionService;
 
-    public function __construct(ValidationService $validationService) {
+    public function __construct(ValidationService $validationService, ReadinessScoreService $readinessScoreService, FaqSuggestionService $faqSuggestionService, PermissionService $permissionService) {
         $this->validationService = $validationService;
+        $this->readinessScoreService = $readinessScoreService;
+        $this->faqSuggestionService = $faqSuggestionService;
+        $this->permissionService = $permissionService;
     }
 
     public function index(Request $request) {
@@ -66,49 +77,95 @@ class SkuController {
         return ResponseFormatter::format(['sku' => $sku, 'instructions' => $meta]);
     }
 
+    /** v2.3.2 Patch 6: Exact tier banner copy per CIE Hardening Addendum §6.1. */
     private function getTierBanner($tier) {
-        switch ($tier) {
-            case 'HERO': return "HERO MODE: Full schema required. Max AI citation priority.";
-            case 'KILL': return "KILL TIER: Editing disabled per policy. SKU marked for decommissioning.";
-            default: return "Standard technical maintenance mode active.";
+        $t = is_string($tier) ? strtoupper(trim($tier)) : '';
+        switch ($t) {
+            case 'HERO':
+                return 'HERO SKU — Full CIE Coverage. This product is a top-revenue performer. All 9 intent types, full Answer Block, FAQ, JSON-LD, and channel feeds are enabled. Target: ≥85 readiness on all active channels within 30 days.';
+            case 'SUPPORT':
+                return 'SUPPORT SKU — Focused Coverage. This product supports revenue but does not lead. Primary intent + max 2 secondary intents enabled. Answer Block and Best-For/Not-For required. Max 2 hours per quarter.';
+            case 'HARVEST':
+                return 'HARVEST SKU — Maintenance Mode. This product has low margin and limited growth potential. Only Specification + 1 optional intent are available. Answer Block, Best-For/Not-For, and Expert Authority are suspended. Max 30 minutes per quarter. Focus your time on Hero SKUs instead.';
+            case 'KILL':
+                return 'KILL SKU — Editing Disabled. This product has negative margin or is flagged for delisting. All content fields are read-only. No time investment permitted. If you believe this classification is wrong, contact your Portfolio Holder to request a tier review (requires Finance co-approval).';
+            default:
+                return 'Standard technical maintenance mode active.';
         }
     }
 
     public function update(Request $request, $id) {
         try {
-            $sku = Sku::findOrFail($id);
-            
-            // Patch 6: Kill-tier SKUs - absolute lock on any edit
-            if ($sku->tier === 'KILL') {
+            // Kill-tier check first: load and reject before any other logic (no bypass)
+            $sku = Sku::lockForUpdate()->findOrFail($id);
+            if (strtoupper((string) ($sku->tier ?? '')) === 'KILL') {
                 return response()->json([
-                    'error' => "KILL TIER: Policy violation. Any edit to a decommissioned SKU is prohibited."
+                    'error' => 'KILL_TIER_LOCKED',
+                    'message' => 'Kill-tier SKUs cannot be modified. Contact Portfolio Holder for tier review.',
                 ], 403);
             }
 
-            // Test 4.5: Version Conflict Detection
+            // Version conflict detection
             $clientVersion = $request->input('lock_version');
-            if ($clientVersion && $clientVersion != $sku->lock_version) {
-                 return response()->json([
-                    'error' => "VERSION CONFLICT: This SKU was modified by another user at T=2. Please merge or discard your changes (v{$clientVersion} != server v{$sku->lock_version})."
+            if ($clientVersion !== null && $clientVersion != $sku->lock_version) {
+                return response()->json([
+                    'error' => "VERSION CONFLICT: This SKU was modified by another user. Please merge or discard your changes (v{$clientVersion} != server v{$sku->lock_version})."
                 ], 409);
             }
 
-            // Only update specific fields that are editable (primary_cluster_id: SEO Governor only, enforced by RBAC)
+            // 3.2 Permission matrix: only allow fields this role may edit
+            $allowedFields = $this->permissionService->allowedSkuUpdateFields(auth()->user());
             $updateData = [];
-            $editableFields = ['title', 'short_description', 'ai_answer_block', 'ai_answer_block_chars', 'meta_description', 'best_for', 'not_for', 'faq_data', 'validation_status', 'primary_cluster_id', 'primary_intent', 'long_description', 'expert_authority_name'];
-            
-            foreach ($editableFields as $field) {
+            foreach ($allowedFields as $field) {
+                if ($field === 'lock_version') continue;
                 if ($request->has($field)) {
                     $updateData[$field] = $request->input($field);
                 }
             }
-            
             $updateData['lock_version'] = ($sku->lock_version ?? 1) + 1;
+
+            // Gate enforcement: do not allow setting validation_status to VALID/PENDING without passing gates
+            $requestedStatus = $updateData['validation_status'] ?? null;
+            if ($requestedStatus !== null && in_array($requestedStatus, ['VALID', 'PENDING'], true)) {
+                $validationResult = $this->validationService->validate($sku->fresh(), true);
+                $results = $validationResult['results'] ?? [];
+                $blockingFailures = array_values(collect($results)->where('blocking', true)->where('passed', false)->all());
+                $valid = $validationResult['valid'] ?? false;
+                if (!$valid || !empty($blockingFailures)) {
+                    return response()->json([
+                        'error' => 'BLOCKING_GATE_FAILURE',
+                        'message' => 'Cannot publish: One or more blocking gates failed',
+                        'failures' => $blockingFailures,
+                    ], 403);
+                }
+            }
+
+            // Field-level audit: capture old values before update (exclude lock_version)
+            $auditFields = array_diff_key($updateData, ['lock_version' => true]);
+            $oldValues = [];
+            foreach (array_keys($auditFields) as $field) {
+                $oldValues[$field] = $sku->getAttribute($field);
+            }
 
             $sku->update($updateData);
 
+            // Log each changed field to audit_log (old/new diff)
+            $userId = auth()->id();
+            foreach ($auditFields as $field => $newVal) {
+                $oldVal = $oldValues[$field] ?? null;
+                if ($oldVal === $newVal) continue;
+                AuditLog::create([
+                    'entity_type' => 'sku',
+                    'entity_id'  => (string) $sku->id,
+                    'action'     => 'update',
+                    'field_name' => $field,
+                    'old_value'  => is_scalar($oldVal) ? (string) $oldVal : json_encode($oldVal),
+                    'new_value'  => is_scalar($newVal) ? (string) $newVal : json_encode($newVal),
+                    'user_id'    => $userId,
+                ]);
+            }
+
             // Run validation after update
-            // If validation_status was modified manually (e.g. Approved by Governor), preserve it.
             $manualStatusUpdate = isset($updateData['validation_status']);
             $validationResult = $this->validationService->validate($sku->fresh(), $manualStatusUpdate);
 
@@ -130,6 +187,14 @@ class SkuController {
 
         $sku = Sku::create($data);
 
+        AuditLog::create([
+            'entity_type' => 'sku',
+            'entity_id'   => (string) $sku->id,
+            'action'      => 'create',
+            'new_value'   => json_encode($data),
+            'user_id'     => auth()->id(),
+        ]);
+
         // Run validation after creation
         $validationResult = $this->validationService->validate($sku->fresh());
 
@@ -140,21 +205,22 @@ class SkuController {
     }
 
     /**
-     * GET /api/v1/sku/{id}/readiness — per-channel readiness scores (0-100). Unified API 7.1.
+     * GET /api/v1/sku/{id}/readiness — per-channel readiness scores (0-100). Unified API 7.1 / 11.3.
+     * Score components weighted by tier; Harvest uses only applicable gates (max 45) then normalised to 0-100.
      */
     public function readiness($id) {
-        $sku = Sku::with(['primaryCluster'])->findOrFail($id);
-        $overall = (int) ($sku->readiness_score ?? 0);
-        $channels = [
-            ['channel' => 'google_sge', 'score' => $overall, 'components' => ['cluster_id' => 25, 'intents' => 25, 'answer_block' => 25, 'authority' => 25]],
-            ['channel' => 'amazon', 'score' => max(0, $overall - 5), 'components' => ['listing' => 50, 'compliance' => 50]],
-            ['channel' => 'ai_assistants', 'score' => $overall, 'components' => ['citation' => 50, 'structured' => 50]],
-            ['channel' => 'own_website', 'score' => min(100, $overall + 5), 'components' => ['core_fields' => 40, 'channel_readiness' => 60]],
-        ];
-        return ResponseFormatter::format([
-            'sku_id' => $sku->id,
-            'channels' => $channels,
-        ]);
+        $sku = Sku::findOrFail($id);
+        $result = $this->readinessScoreService->computeReadiness($sku);
+        return ResponseFormatter::format($result);
+    }
+
+    /**
+     * GET /skus/{id}/faq-suggestions — v2.3.2 Patch 4: auto-generated FAQ blocks from best_for + not_for.
+     */
+    public function faqSuggestions($id) {
+        $sku = Sku::findOrFail($id);
+        $blocks = $this->faqSuggestionService->suggestFromBestForNotFor($sku);
+        return ResponseFormatter::format(['sku_id' => (string) $sku->id, 'faq_blocks' => $blocks]);
     }
 
     public function stats() {

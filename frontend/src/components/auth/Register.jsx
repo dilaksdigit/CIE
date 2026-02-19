@@ -132,13 +132,14 @@ const Register = () => {
                         >
                             <option value="content_editor">Content Editor (Edit SKU content, SUPPORT/HARVEST)</option>
                             <option value="product_specialist">Product Specialist (Expert authority & safety certs)</option>
-                            <option value="seo_governor">SEO Governor (Clusters, intent taxonomy)</option>
+                            <option value="seo_governor">SEO Governor (Clusters, lock/unlock taxonomy, approve cluster changes)</option>
                             <option value="channel_manager">Channel Manager (Readiness, channel mappings)</option>
-                            <option value="ai_ops">AI Ops (Run audits, golden queries, decay monitor)</option>
-                            <option value="portfolio_holder">Portfolio Holder (Approve tier changes, publish)</option>
-                            <option value="finance">Finance (ERP sync, tier recalculation, dual approval)</option>
-                            <option value="admin">Admin (Config, user management — no SKU content edit)</option>
-                            <option value="viewer">Viewer (Read-only)</option>
+                            <option value="ai_ops">AI Ops (Run audits, decay monitor, golden queries)</option>
+                            <option value="content_lead">Content Lead (Edit + approve + assign briefs + effort reports)</option>
+                            <option value="portfolio_holder">Portfolio Holder (Same as Content Lead)</option>
+                            <option value="finance">Finance (ERP sync, tier recalculation — no content edit)</option>
+                            <option value="admin">Admin (Full access — config, users, taxonomy)</option>
+                            <option value="viewer">Viewer (Read-only dashboard)</option>
                         </select>
                     </div>
 

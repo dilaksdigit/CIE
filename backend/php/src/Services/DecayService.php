@@ -2,8 +2,8 @@
 namespace App\Services;
 
 use App\Models\Sku;
-use App\Models\Notification;
 use App\Models\AuditLog;
+use Illuminate\Support\Facades\Log;
 
 class DecayService
 {
@@ -86,27 +86,51 @@ class DecayService
 
     private function generateAutoBrief(Sku $sku): void
     {
-        // Logic to generate content refresh brief with competitor answers
-        \App\Models\ContentBrief::create([
+        $brief = \App\Models\ContentBrief::create([
             'sku_id' => $sku->id,
-            'type' => 'REFRESH',
-            'reason' => '3-Week Citation Decay (Auto-generated)',
-            'status' => 'DRAFT'
+            'brief_type' => 'DECAY_REFRESH',
+            'title' => 'Auto-brief: 3-week citation decay – ' . ($sku->title ?? $sku->sku_code ?? $sku->id),
+            'description' => '3-Week Citation Decay (Auto-generated). Refresh answer block and authority content.',
+            'status' => 'OPEN',
         ]);
 
+        // Queue brief generation in Python worker so actual brief content is produced
+        $pythonUrl = rtrim(env('PYTHON_API_URL', 'http://python-worker:5000'), '/');
+        try {
+            $client = new \GuzzleHttp\Client(['timeout' => 5.0]);
+            $response = $client->post($pythonUrl . '/queue/brief-generation', [
+                'json' => [
+                    'sku_id' => $sku->id,
+                    'title'  => $sku->title ?? $sku->sku_code ?? 'SKU',
+                ],
+            ]);
+            $body = json_decode($response->getBody()->getContents(), true);
+            Log::info('Auto-brief queued for SKU after 3-week decay', [
+                'sku_id' => $sku->id,
+                'sku_code' => $sku->sku_code,
+                'brief_id' => $brief->id ?? null,
+                'queued' => $body['queued'] ?? false,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to queue auto-brief for SKU ' . $sku->id . ': ' . $e->getMessage());
+        }
+
         // Log brief_generated in audit_log
-        AuditLog::create([
-            'entity_type' => 'brief',
-            'entity_id'   => $sku->id,
-            'action'      => 'brief_generated',
-            'field_name'  => null,
-            'old_value'   => null,
-            'new_value'   => 'auto_decay_brief',
-            'actor_id'    => 'SYSTEM',
-            'actor_role'  => 'system',
-            'ip_address'  => null,
-            'user_agent'  => null,
-            'timestamp'   => now(),
-        ]);
+        try {
+            AuditLog::create([
+                'entity_type' => 'brief',
+                'entity_id'   => $sku->id,
+                'action'      => 'brief_generated',
+                'field_name'  => null,
+                'old_value'   => null,
+                'new_value'   => 'auto_decay_brief',
+                'user_id'     => null,
+                'ip_address'  => null,
+                'user_agent'  => null,
+                'created_at'  => now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Fail-soft if audit_log columns differ
+        }
     }
 }

@@ -230,7 +230,7 @@ const SkuEdit = () => {
                         <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>— {sku.title}</span>
                     </div>
                     <div style={{ fontSize: "0.62rem", color: tierStyle.color, marginTop: 4 }}>
-                        {currentTier} TIER: {isKillTier ? (getTierBanner(currentTier) || 'No edits permitted.') : (isHarvestTier ? 'HARVEST MODE: Specification + problem_solving + compatibility only. Max 1 secondary. Effort cap: 30m/quarter.' : (currentTier === 'HERO' ? 'Full content required. All 7 gates + vector must pass.' : 'Standard governance requirements apply.'))}
+                        {getTierBanner(currentTier) || `${currentTier} TIER`}
                     </div>
                 </div>
                 <div className="flex gap-8" style={{ flexShrink: 0, minWidth: 'fit-content' }}>
@@ -247,7 +247,7 @@ const SkuEdit = () => {
                         </>
                     )}
                     {isKillTier && (
-                        <div style={{ fontSize: '0.7rem', color: 'var(--red)', fontWeight: 600 }}>{getTierBanner(currentTier) || 'READ-ONLY — KILL tier'}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--red)', fontWeight: 600 }}>{getTierBanner(currentTier)}</div>
                     )}
                     {!isKillTier && !canEditAny() && (
                         <div style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 600 }}>READ-ONLY</div>

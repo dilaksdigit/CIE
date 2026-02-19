@@ -37,33 +37,23 @@ class G5_TechnicalGate implements GateInterface
  );
  }
 
- // Patch 5: Best-For/Not-For Enforcement
- $bestFor = array_filter(explode(',', $sku->best_for ?? ''));
- $notFor = array_filter(explode(',', $sku->not_for ?? ''));
-
- if (count($bestFor) < 2 || count($notFor) < 1) {
-     return new GateResult(
-         gate: GateType::G5_TECHNICAL,
-         passed: false,
-         reason: sprintf('V2.3.2 Requirement: Min 2 Best-For (found %d) and 1 Not-For (found %d) required.', 
-             count($bestFor), count($notFor)),
-         blocking: true
-     );
- }
-
- // Patch 4: Mandatory FAQ Templates (Hero/Support only)
- if (in_array($sku->tier->value ?? '', ['HERO', 'SUPPORT'])) {
-     $faqCount = count(json_decode($sku->faq_data ?? '[]', true));
-     if ($faqCount < 3) {
+ // Patch 5: Best-For/Not-For Enforcement only for Hero/Support (Harvest/Kill skip)
+ $tier = strtoupper((string) ($sku->tier->value ?? $sku->tier ?? ''));
+ if (in_array($tier, ['HERO', 'SUPPORT'], true)) {
+     $bestFor = self::parseListAttribute($sku->best_for);
+     $notFor = self::parseListAttribute($sku->not_for);
+     if (count($bestFor) < 2 || count($notFor) < 1) {
          return new GateResult(
              gate: GateType::G5_TECHNICAL,
              passed: false,
-             reason: 'Patch 4: Mandatory FAQ template incomplete. Min 3 FAQs required for Hero/Support.',
+             reason: sprintf('Min 2 Best-For (found %d) and 1 Not-For (found %d) required.', count($bestFor), count($notFor)),
              blocking: true
          );
      }
  }
- 
+
+ // Patch 4 §4.3: FAQ completeness is a readiness component only in v2.3.2, not a publish gate until v2.4.
+
  $unitIssues = $this->validateUnits($skuSpecs);
  if (count($unitIssues) > 0) {
  return new GateResult(
@@ -96,5 +86,21 @@ class G5_TechnicalGate implements GateInterface
  }
  }
  return $issues;
+ }
+
+ /** Parse best_for/not_for whether stored as JSON array or comma-separated string. */
+ private static function parseListAttribute($value): array
+ {
+     if (is_array($value)) {
+         return array_values(array_filter(array_map('trim', $value)));
+     }
+     $raw = $value ?? '';
+     if (is_string($raw) && (str_starts_with(trim($raw), '[') || str_starts_with(trim($raw), '{'))) {
+         $decoded = json_decode($raw, true);
+         if (is_array($decoded)) {
+             return array_values(array_filter(array_map('trim', $decoded)));
+         }
+     }
+     return array_filter(array_map('trim', explode(',', (string) $raw)));
  }
 }

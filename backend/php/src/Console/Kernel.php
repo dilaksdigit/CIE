@@ -11,7 +11,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule($schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // CIE v2.3.2: Run decay escalation weekly after AI audit (e.g. Monday 06:00)
+        $schedule->command('decay:run')->weeklyOn(1, '06:00');
+        // PHP-native: read ai_audit_runs/ai_audit_results, increment zeros, create brief at week 3
+        $schedule->command('cie:decay-check')->weeklyOn(1, '06:30');
     }
 
     /**

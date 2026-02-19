@@ -4,10 +4,23 @@ use App\Controllers\SkuController;
 use App\Controllers\ValidationController;
 use App\Controllers\TierController;
 use App\Controllers\ClusterController;
+use App\Controllers\ClusterChangeRequestController;
 use App\Controllers\AuditController;
 use App\Controllers\BriefController;
 use App\Controllers\IntentsController;
+use App\Controllers\DashboardController;
+use App\Controllers\ConfigController;
 use Illuminate\Support\Facades\Route;
+
+// GET /api — base URL (avoids 404 when visiting http://localhost:8080/api)
+Route::get('/', function () {
+    return response()->json([
+        'name'    => 'CIE API',
+        'version' => '2.3.2',
+        'status'  => 'running',
+        'docs'    => 'Use /api/auth/login, /api/skus, /api/clusters, etc.',
+    ]);
+});
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -17,10 +30,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/skus', [SkuController::class, 'index']);
     Route::get('/skus/stats', [SkuController::class, 'stats']);
     Route::get('/skus/{id}', [SkuController::class, 'show']);
-    Route::post('/skus', [SkuController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,ADMIN');
-    Route::put('/skus/{id}', [SkuController::class, 'update'])->middleware('rbac:CONTENT_EDITOR,ADMIN');
+    Route::post('/skus', [SkuController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,CHANNEL_MANAGER,ADMIN');
+    Route::put('/skus/{id}', [SkuController::class, 'update'])->middleware('rbac:CONTENT_EDITOR,PRODUCT_SPECIALIST,CHANNEL_MANAGER,SEO_GOVERNOR,CONTENT_LEAD,PORTFOLIO_HOLDER,ADMIN');
     Route::post('/skus/{id}/validate', [ValidationController::class, 'validate']);
     Route::get('/skus/{id}/readiness', [SkuController::class, 'readiness']);
+    Route::get('/skus/{id}/faq-suggestions', [SkuController::class, 'faqSuggestions']);
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+    Route::get('/dashboard/decay-alerts', [DashboardController::class, 'decayAlerts']);
+
+    // Config (Admin-only for update)
+    Route::get('/config', [ConfigController::class, 'index']);
+    Route::put('/config', [ConfigController::class, 'update'])->middleware('rbac:ADMIN');
 
     // Tier Management
     Route::post('/tiers/recalculate', [TierController::class, 'recalculate'])->middleware('rbac:FINANCE,ADMIN');
@@ -30,9 +50,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/clusters/{id}', [ClusterController::class, 'show']);
     Route::post('/clusters', [ClusterController::class, 'store'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
     Route::put('/clusters/{id}', [ClusterController::class, 'update'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
+    // v2.3.2 Patch 5: Cluster governance (propose → review → approve)
+    Route::get('/cluster-change-requests', [ClusterChangeRequestController::class, 'index']);
+    Route::post('/cluster-change-requests', [ClusterChangeRequestController::class, 'store']);
+    Route::get('/cluster-change-requests/{id}', [ClusterChangeRequestController::class, 'show']);
+    Route::post('/cluster-change-requests/{id}/review', [ClusterChangeRequestController::class, 'review'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
+    Route::post('/cluster-change-requests/{id}/approve', [ClusterChangeRequestController::class, 'approve'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
+    Route::post('/cluster-change-requests/{id}/reject', [ClusterChangeRequestController::class, 'reject'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
 
-    // Taxonomy (Unified API 7.1)
+    // Taxonomy (Unified API 7.1). 3.2: Only ADMIN can modify 9-intent taxonomy.
     Route::get('/taxonomy/intents', [IntentsController::class, 'index']);
+    Route::put('/taxonomy/intents/{id}', [IntentsController::class, 'update'])->middleware('rbac:ADMIN');
 
     // Audit Management
     Route::post('/audit/{sku_id}', [AuditController::class, 'runAudit'])->middleware('rbac:AI_OPS,ADMIN');
@@ -43,7 +71,7 @@ Route::middleware('auth')->group(function () {
 
     // Brief Management
     Route::get('/briefs', [BriefController::class, 'index']);
-    Route::post('/briefs', [BriefController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,ADMIN');
+    Route::post('/briefs', [BriefController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,CONTENT_LEAD,PORTFOLIO_HOLDER,ADMIN');
     Route::post('/brief/generate', [BriefController::class, 'generate']);
     Route::get('/briefs/{id}', [BriefController::class, 'show']);
 
@@ -57,15 +85,25 @@ Route::prefix('v1')->middleware('auth')->group(function () {
     Route::get('/skus/stats', [SkuController::class, 'stats']);
     Route::get('/skus/{id}', [SkuController::class, 'show']);
     Route::get('/skus/{id}/readiness', [SkuController::class, 'readiness']);
-    Route::post('/skus', [SkuController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,ADMIN');
-    Route::put('/skus/{id}', [SkuController::class, 'update'])->middleware('rbac:CONTENT_EDITOR,ADMIN');
+    Route::get('/skus/{id}/faq-suggestions', [SkuController::class, 'faqSuggestions']);
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+    Route::get('/dashboard/decay-alerts', [DashboardController::class, 'decayAlerts']);
+    Route::post('/skus', [SkuController::class, 'store'])->middleware('rbac:CONTENT_EDITOR,CHANNEL_MANAGER,ADMIN');
+    Route::put('/skus/{id}', [SkuController::class, 'update'])->middleware('rbac:CONTENT_EDITOR,PRODUCT_SPECIALIST,CHANNEL_MANAGER,SEO_GOVERNOR,CONTENT_LEAD,PORTFOLIO_HOLDER,ADMIN');
     Route::post('/skus/{id}/validate', [ValidationController::class, 'validate']);
     Route::post('/tiers/recalculate', [TierController::class, 'recalculate'])->middleware('rbac:FINANCE,ADMIN');
     Route::get('/clusters', [ClusterController::class, 'index']);
     Route::get('/clusters/{id}', [ClusterController::class, 'show']);
     Route::post('/clusters', [ClusterController::class, 'store'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
     Route::put('/clusters/{id}', [ClusterController::class, 'update'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
+    Route::get('/cluster-change-requests', [ClusterChangeRequestController::class, 'index']);
+    Route::post('/cluster-change-requests', [ClusterChangeRequestController::class, 'store']);
+    Route::get('/cluster-change-requests/{id}', [ClusterChangeRequestController::class, 'show']);
+    Route::post('/cluster-change-requests/{id}/review', [ClusterChangeRequestController::class, 'review'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
+    Route::post('/cluster-change-requests/{id}/approve', [ClusterChangeRequestController::class, 'approve'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
+    Route::post('/cluster-change-requests/{id}/reject', [ClusterChangeRequestController::class, 'reject'])->middleware('rbac:SEO_GOVERNOR,ADMIN');
     Route::get('/taxonomy/intents', [IntentsController::class, 'index']);
+    Route::put('/taxonomy/intents/{id}', [IntentsController::class, 'update'])->middleware('rbac:ADMIN');
     Route::post('/audit/run', [AuditController::class, 'runByCategory'])->middleware('rbac:AI_OPS,ADMIN');
     Route::get('/audit/results/{category}', [AuditController::class, 'resultsByCategory']);
     Route::post('/brief/generate', [BriefController::class, 'generate']);

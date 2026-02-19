@@ -3,7 +3,8 @@
 namespace App\Enums;
 
 /**
- * Canonical role names per CIE spec.
+ * Canonical role names per CIE spec 3.1 / 3.2 Permission Matrix.
+ * CONTENT_LEAD = Portfolio Holder (edit + approve + assign briefs + effort reports).
  */
 enum RoleType: string
 {
@@ -12,7 +13,7 @@ enum RoleType: string
     case SEO_GOVERNOR      = 'seo_governor';
     case CHANNEL_MANAGER   = 'channel_manager';
     case AI_OPS            = 'ai_ops';
-    case PORTFOLIO_HOLDER  = 'portfolio_holder';
+    case CONTENT_LEAD      = 'content_lead';
     case FINANCE           = 'finance';
     case ADMIN             = 'admin';
     case SYSTEM            = 'system';
@@ -26,7 +27,8 @@ enum RoleType: string
             'SEO_GOVERNOR'      => self::SEO_GOVERNOR,
             'CHANNEL_MANAGER'   => self::CHANNEL_MANAGER,
             'AI_OPS'            => self::AI_OPS,
-            'PORTFOLIO_HOLDER'  => self::PORTFOLIO_HOLDER,
+            'CONTENT_LEAD'      => self::CONTENT_LEAD,
+            'PORTFOLIO_HOLDER'  => self::CONTENT_LEAD,
             'FINANCE'           => self::FINANCE,
             'ADMIN'             => self::ADMIN,
             'SYSTEM'            => self::SYSTEM,
@@ -34,4 +36,5 @@ enum RoleType: string
             default             => null,
         };
     }
+
 }

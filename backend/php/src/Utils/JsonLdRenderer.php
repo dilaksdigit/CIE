@@ -30,11 +30,13 @@ class JsonLdRenderer
             return '';
         }
         
-        // Base schema structure
+        // Base schema structure (Product identity + sku for LLM/citation)
         $schema = [
             '@context' => 'https://schema.org',
             '@type' => 'Product',
             'name' => $sku->title ?? '',
+            'description' => $sku->ai_answer_block ?? $sku->short_description ?? $sku->description ?? '',
+            'sku' => $sku->sku_code ?? '',
         ];
         
         // Brand (from env or config)
@@ -55,7 +57,7 @@ class JsonLdRenderer
             ];
         }
         
-        // Support and Hero: include description (from answer_block)
+        // Support and Hero: ensure description from answer_block (may already be set above)
         if (in_array($tier, ['hero', 'support'])) {
             $description = $sku->ai_answer_block ?? $sku->short_description ?? '';
             if ($description) {
@@ -63,23 +65,18 @@ class JsonLdRenderer
             }
         }
         
-        // Hero only: full schema with Wikidata, Expert Authority, Best For, Not For
+        // Hero only: full schema with Wikidata sameAs (array), Expert Authority, Best For, Not For
+        // sameAs: Product-level sameAs is an array of Wikidata URLs when wikidata_uri or wikidata_entities
+        // is set (spec Patch 3 §3.2). Supports multiple entities e.g. ["Q174102","Q193514"] → full URLs.
         if ($tier === 'hero') {
-            // Material with Wikidata URI (sameAs)
-            $wikidataUri = $sku->wikidata_uri ?? $sku->wikidata_entities ?? null;
-            if ($wikidataUri) {
-                // If wikidata_entities is JSON, extract URI; otherwise use as-is
-                if (is_string($wikidataUri) && str_starts_with($wikidataUri, '{')) {
-                    $decoded = json_decode($wikidataUri, true);
-                    $wikidataUri = $decoded['uri'] ?? $decoded['sameAs'] ?? $wikidataUri;
-                }
-                if (filter_var($wikidataUri, FILTER_VALIDATE_URL) || str_starts_with($wikidataUri, 'https://wikidata.org/entity/')) {
-                    $schema['material'] = [
-                        '@type' => 'Text',
-                        'name' => $sku->material_name ?? 'Product Material',
-                        'sameAs' => $wikidataUri,
-                    ];
-                }
+            $sameAsUrls = self::normalizeWikidataSameAs($sku->wikidata_uri ?? null, $sku->wikidata_entities ?? null);
+            if ($sameAsUrls !== []) {
+                $schema['sameAs'] = count($sameAsUrls) === 1 ? $sameAsUrls[0] : $sameAsUrls;
+                $schema['material'] = [
+                    '@type' => 'Text',
+                    'name' => $sku->material_name ?? 'Product Material',
+                    'sameAs' => $sameAsUrls[0] ?? null,
+                ];
             }
             
             // Additional properties: Expert Authority, Best For, Not For
@@ -132,9 +129,84 @@ class JsonLdRenderer
             }
         }
         
-        // Encode JSON with pretty-print for readability (optional: use JSON_UNESCAPED_SLASHES)
+        // Encode Product JSON-LD
         $json = json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        
-        return '<script type="application/ld+json">' . "\n" . $json . "\n" . '</script>';
+        $output = '<script type="application/ld+json">' . "\n" . $json . "\n" . '</script>';
+
+        // Optional: FAQPage schema for Hero when FAQs present (citability)
+        $faqs = $sku->faq_data ?? $sku->faqs ?? null;
+        if ($tier === 'hero' && !empty($faqs)) {
+            $faqArray = is_string($faqs) ? json_decode($faqs, true) : $faqs;
+            if (is_array($faqArray) && count($faqArray) > 0) {
+                $mainEntity = [];
+                foreach ($faqArray as $faq) {
+                    $q = is_array($faq) ? ($faq['question'] ?? $faq['q'] ?? '') : '';
+                    $a = is_array($faq) ? ($faq['answer'] ?? $faq['a'] ?? '') : '';
+                    if ($q !== '' || $a !== '') {
+                        $mainEntity[] = [
+                            '@type' => 'Question',
+                            'name' => $q,
+                            'acceptedAnswer' => ['@type' => 'Answer', 'text' => $a],
+                        ];
+                    }
+                }
+                if (!empty($mainEntity)) {
+                    $faqSchema = [
+                        '@context' => 'https://schema.org',
+                        '@type' => 'FAQPage',
+                        'mainEntity' => $mainEntity,
+                    ];
+                    $output .= "\n" . '<script type="application/ld+json">' . "\n" . json_encode($faqSchema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n" . '</script>';
+                }
+            }
+        }
+
+        return $output;
+    }
+
+    /**
+     * Return list of valid Wikidata URLs for sameAs (Hero).
+     * Accepts: single URI string, JSON string of URI/array, array of Q-ids or URLs or objects with uri/id.
+     */
+    private static function normalizeWikidataSameAs($wikidataUri, $wikidataEntities): array
+    {
+        $out = [];
+        $add = static function ($v) use (&$out) {
+            if (is_string($v)) {
+                $v = trim($v);
+                if ($v === '') return;
+                if (str_starts_with($v, 'http') && str_contains($v, 'wikidata.org')) {
+                    $out[] = $v;
+                    return;
+                }
+                if (preg_match('/^Q\d+$/i', $v)) {
+                    $out[] = 'https://www.wikidata.org/wiki/' . $v;
+                }
+                return;
+            }
+            if (is_array($v)) {
+                if (isset($v['uri'])) { $add($v['uri']); return; }
+                if (isset($v['sameAs'])) { $add($v['sameAs']); return; }
+                if (isset($v['id'])) { $add($v['id']); return; }
+                foreach ($v as $item) $add($item);
+            }
+        };
+        if ($wikidataUri !== null) {
+            if (is_string($wikidataUri) && (str_starts_with(trim($wikidataUri), '[') || str_starts_with(trim($wikidataUri), '{'))) {
+                $decoded = json_decode($wikidataUri, true);
+                $add($decoded);
+            } else {
+                $add($wikidataUri);
+            }
+        }
+        if ($wikidataEntities !== null) {
+            if (is_string($wikidataEntities)) {
+                $decoded = json_decode($wikidataEntities, true);
+                $add(is_array($decoded) ? $decoded : $wikidataEntities);
+            } else {
+                $add($wikidataEntities);
+            }
+        }
+        return array_values(array_unique($out));
     }
 }

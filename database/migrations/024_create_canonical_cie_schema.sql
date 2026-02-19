@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS sku_gate_status (
     id            CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     sku_id        VARCHAR(50) NOT NULL,
     gate_code     ENUM('G1','G2','G3','G4','G5','G6','G6_1','G7','VECTOR') NOT NULL,
-    status        ENUM('pass','fail','not_applicable') NOT NULL,
+    status        ENUM('pass','fail','pending','not_applicable') NOT NULL,
     error_code    VARCHAR(40) NULL,
     error_message VARCHAR(500) NULL,
     checked_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

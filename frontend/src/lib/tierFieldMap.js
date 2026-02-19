@@ -1,28 +1,39 @@
 /**
- * CIE v2.3.1 — CMS form field visibility by SKU tier (G6.1).
+ * CIE v2.3.1 + v2.3.2 Patch 6 — CMS form field visibility and tier banner copy per tier.
  * Input: tier string (hero/support/harvest/kill)
- * Output: show/hide form sections, max secondary intents, readonly state.
+ * Output: show/hide form sections, max secondary intents, readonly state, exact banner text.
  */
+
+/** v2.3.2 Patch 6: Exact banner copy per tier (CIE Hardening Addendum §6.1). */
+export const TIER_BANNER_COPY = {
+    hero: 'HERO SKU — Full CIE Coverage. This product is a top-revenue performer. All 9 intent types, full Answer Block, FAQ, JSON-LD, and channel feeds are enabled. Target: ≥85 readiness on all active channels within 30 days.',
+    support: 'SUPPORT SKU — Focused Coverage. This product supports revenue but does not lead. Primary intent + max 2 secondary intents enabled. Answer Block and Best-For/Not-For required. Max 2 hours per quarter.',
+    harvest: 'HARVEST SKU — Maintenance Mode. This product has low margin and limited growth potential. Only Specification + 1 optional intent are available. Answer Block, Best-For/Not-For, and Expert Authority are suspended. Max 30 minutes per quarter. Focus your time on Hero SKUs instead.',
+    kill: 'KILL SKU — Editing Disabled. This product has negative margin or is flagged for delisting. All content fields are read-only. No time investment permitted. If you believe this classification is wrong, contact your Portfolio Holder to request a tier review (requires Finance co-approval).',
+};
 
 export const TIER_FIELD_MAP = {
     hero: {
         enabled: ['all_9_intents', 'answer_block', 'best_for', 'not_for', 'expert_authority', 'wikidata_uri', 'json_ld_preview'],
         max_secondary: 3,
+        banner: TIER_BANNER_COPY.hero,
     },
     support: {
         enabled: ['all_9_intents', 'answer_block', 'best_for', 'not_for', 'expert_authority'],
         max_secondary: 2,
         hidden: ['wikidata_uri'],
+        banner: TIER_BANNER_COPY.support,
     },
     harvest: {
         enabled: ['specification', 'problem_solving', 'compatibility'],
         hidden: ['answer_block', 'best_for', 'not_for', 'expert_authority', 'wikidata_uri', 'comparison', 'installation', 'troubleshooting', 'inspiration', 'regulatory', 'replacement'],
         max_secondary: 1,
+        banner: TIER_BANNER_COPY.harvest,
     },
     kill: {
         enabled: [],
         readonly: true,
-        banner: 'This SKU is flagged for delisting. No edits permitted.',
+        banner: TIER_BANNER_COPY.kill,
     },
 };
 
@@ -50,11 +61,11 @@ export function isTierReadonly(tier) {
 }
 
 /**
- * Banner message for read-only tier (e.g. Kill).
+ * Banner message for tier (v2.3.2 Patch 6: exact copy per tier).
  */
 export function getTierBanner(tier) {
     const config = getTierConfig(tier);
-    return config.banner || null;
+    return config.banner ?? TIER_BANNER_COPY[normalizeTier(tier)] ?? null;
 }
 
 /**

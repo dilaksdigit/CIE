@@ -20,7 +20,7 @@ def _get_client():
                 "OPENAI_API_KEY is not configured. "
                 "Set it in your .env file or as an environment variable."
             )
-        _client = OpenAI(api_key=api_key, timeout=10.0)  # 10s default timeout
+        _client = OpenAI(api_key=api_key, timeout=3.0)  # v2.3.2: 3s timeout for fail-soft
     return _client
 
 

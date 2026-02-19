@@ -1,61 +1,61 @@
 /**
- * Role-Based Access Control (RBAC)
- * No superuser bypass. Admin cannot edit SKU content. Every check should be logged server-side.
+ * Role-Based Access Control (RBAC) — CIE 3.1 / 3.2 Permission Matrix
+ * No superuser bypass. Content editors CANNOT override validation gate failures.
  *
- * Roles (3.1): content_editor, product_specialist, seo_governor, channel_manager,
- *              ai_ops, portfolio_holder, finance, admin, system, viewer
+ * Roles: ADMIN, SEO_GOVERNOR, CONTENT_EDITOR, CONTENT_LEAD, PRODUCT_SPECIALIST,
+ *       CHANNEL_MANAGER, FINANCE, AI_OPS, VIEWER (SYSTEM for internal)
  *
- * Critical: KILL-tier SKUs revoke ALL edit permissions system-wide.
- *           Content editors CANNOT override validation gate failures.
- *           Manual tier change requires DUAL sign-off (Portfolio Holder + Finance).
+ * Key restrictions:
+ * - Only ADMIN + FINANCE can trigger tier recalculation
+ * - Only SEO_GOVERNOR can modify cluster intent statements
+ * - Only ADMIN can modify the 9-intent taxonomy
+ * - Content editors CANNOT override validation gate failures
+ * - KILL-tier SKUs: all edit disabled
  */
 
 const ROLES = {
-    CONTENT_EDITOR: 'content_editor',
-    PRODUCT_SPECIALIST: 'product_specialist',
-    SEO_GOVERNOR: 'seo_governor',
-    CHANNEL_MANAGER: 'channel_manager',
-    AI_OPS: 'ai_ops',
-    PORTFOLIO_HOLDER: 'portfolio_holder',
-    FINANCE: 'finance',
     ADMIN: 'admin',
-    SYSTEM: 'system',
+    SEO_GOVERNOR: 'seo_governor',
+    CONTENT_EDITOR: 'content_editor',
+    CONTENT_LEAD: 'content_lead',
+    PRODUCT_SPECIALIST: 'product_specialist',
+    CHANNEL_MANAGER: 'channel_manager',
+    FINANCE: 'finance',
+    AI_OPS: 'ai_ops',
     VIEWER: 'viewer',
+    SYSTEM: 'system',
 };
 
-/** Normalize role from backend (e.g. ADMIN, SEO_GOVERNOR, content_editor) to lowercase snake_case */
+/** Normalize role from backend (e.g. ADMIN, CONTENT_LEAD) to lowercase snake_case. PORTFOLIO_HOLDER → content_lead */
 export function normalizeRole(role) {
     if (!role) return '';
     const r = String(role).toLowerCase().trim().replace(/-/g, '_');
-    // Legacy mapping for backward compatibility
     const legacy = {
         governor: 'seo_governor',
         editor: 'content_editor',
-        content_lead: 'portfolio_holder',
+        portfolio_holder: 'content_lead',
         finance_director: 'finance',
     };
     return legacy[r] || r;
 }
 
-/** Whether the user can access the app (any role except unauthenticated) */
 export function canAccess(user) {
     return !!user && !!normalizeRole(user.role);
 }
 
-// --- Permission matrix (3.2) ---
+// --- 3.2 Permission Matrix ---
 
-/** Create/edit content fields (title, descriptions, answer block, best-for, not-for). Admin & PH CANNOT (matrix 3.2). */
+/** Create/edit content fields. Editor, Prod Spec, Ch Mgr YES; CONTENT_LEAD/Finance/Admin NO for content. */
 export function canEditContentFields(user, sku) {
     if (!user || !sku) return false;
     const role = normalizeRole(user.role);
     if (role === ROLES.ADMIN || role === ROLES.SYSTEM || role === ROLES.VIEWER) return false;
-    if (role === ROLES.PORTFOLIO_HOLDER || role === ROLES.FINANCE) return false; // Matrix: PH NO, Finance NO
-    if (sku.tier === 'KILL') return false; // CRITICAL: KILL revokes all edit
-    // Editor, Prod Spec*, Ch Mgr* per matrix (*category-bound: not enforced in UI yet)
+    if (role === ROLES.CONTENT_LEAD || role === ROLES.FINANCE) return false;
+    if (sku.tier === 'KILL') return false;
     return [ROLES.CONTENT_EDITOR, ROLES.PRODUCT_SPECIALIST, ROLES.CHANNEL_MANAGER].includes(role);
 }
 
-/** Tier-lock for content_editor: SUPPORT & HARVEST only; cannot edit HERO */
+/** Tier-lock: content_editor can only edit SUPPORT & HARVEST; not HERO */
 export function canEditContentFieldsForTier(user, sku) {
     if (!canEditContentFields(user, sku)) return false;
     const role = normalizeRole(user.role);
@@ -63,56 +63,55 @@ export function canEditContentFieldsForTier(user, sku) {
     return true;
 }
 
-/** Edit expert authority / safety certs. Product Specialist only. */
+/** Edit expert authority / safety certs. Product Specialist only (Admin has full access elsewhere). */
 export function canEditExpertAuthority(user, sku) {
     if (!user || !sku) return false;
     if (sku.tier === 'KILL') return false;
-    return normalizeRole(user.role) === ROLES.PRODUCT_SPECIALIST;
+    const role = normalizeRole(user.role);
+    return role === ROLES.PRODUCT_SPECIALIST || role === ROLES.ADMIN;
 }
 
-/** Assign/change cluster_id. SEO Governor only. */
+/** Assign/change cluster_id. SEO Governor only (Admin has full access). */
 export function canAssignCluster(user) {
     if (!user) return false;
-    return normalizeRole(user.role) === ROLES.SEO_GOVERNOR;
+    const role = normalizeRole(user.role);
+    return role === ROLES.SEO_GOVERNOR || role === ROLES.ADMIN;
 }
 
-/** Modify/propose intent taxonomy. Matrix 3.2: only SEO Governor (REVIEW* — quarterly Commercial Director review to activate). Admin = NO. */
+/** Modify 9-intent taxonomy. ADMIN only (should never happen in practice). */
 export function canModifyIntentTaxonomy(user) {
     if (!user) return false;
+    return normalizeRole(user.role) === ROLES.ADMIN;
+}
+
+export function canProposeTaxonomyChange(user) {
     return normalizeRole(user.role) === ROLES.SEO_GOVERNOR;
 }
 
-/** Alias: SEO Governor proposes taxonomy changes (review with Commercial Director to activate). */
-export function canProposeTaxonomyChange(user) {
-    return canModifyIntentTaxonomy(user);
-}
-
-/** Manual tier change requires DUAL: Portfolio Holder AND Finance. Admin cannot do alone. */
+/** Manual tier change: DUAL sign-off. Portfolio Holder (CONTENT_LEAD) */
 export function canApproveTierAsPortfolioHolder(user) {
     if (!user) return false;
-    const role = normalizeRole(user.role);
-    return role === ROLES.PORTFOLIO_HOLDER;
+    return normalizeRole(user.role) === ROLES.CONTENT_LEAD;
 }
 
 export function canApproveTierAsFinance(user) {
     if (!user) return false;
-    const role = normalizeRole(user.role);
-    return role === ROLES.FINANCE;
+    return normalizeRole(user.role) === ROLES.FINANCE;
 }
 
-/** Trigger tier recalculation. Admin + Finance only. */
+/** Trigger tier recalculation. ADMIN + FINANCE only. */
 export function canTriggerTierRecalculation(user) {
     if (!user) return false;
     const role = normalizeRole(user.role);
     return role === ROLES.ADMIN || role === ROLES.FINANCE;
 }
 
-/** Publish SKU / submit for review. Editor, SEO Gov, Ch Mgr, PH. Not Admin. */
+/** Publish SKU / submit for review. Editor, SEO Gov, Ch Mgr, CONTENT_LEAD (PH). */
 export function canPublishSku(user, sku) {
     if (!user || !sku) return false;
     if (sku.tier === 'KILL') return false;
     const role = normalizeRole(user.role);
-    return [ROLES.CONTENT_EDITOR, ROLES.SEO_GOVERNOR, ROLES.CHANNEL_MANAGER, ROLES.PORTFOLIO_HOLDER].includes(role);
+    return [ROLES.CONTENT_EDITOR, ROLES.SEO_GOVERNOR, ROLES.CHANNEL_MANAGER, ROLES.CONTENT_LEAD, ROLES.ADMIN].includes(role);
 }
 
 /** Run AI audit. AI Ops, Admin, System. */
@@ -122,14 +121,13 @@ export function canRunAIAudit(user) {
     return [ROLES.AI_OPS, ROLES.ADMIN, ROLES.SYSTEM].includes(role);
 }
 
-/** Manage golden queries. SEO Governor, AI Ops. */
+/** Manage golden queries. Matrix: Editor, Ch Mgr, AI Ops, PH, Finance, Admin. */
 export function canManageGoldenQueries(user) {
     if (!user) return false;
     const role = normalizeRole(user.role);
-    return [ROLES.SEO_GOVERNOR, ROLES.AI_OPS].includes(role);
+    return [ROLES.CONTENT_EDITOR, ROLES.CHANNEL_MANAGER, ROLES.AI_OPS, ROLES.CONTENT_LEAD, ROLES.FINANCE, ROLES.ADMIN].includes(role);
 }
 
-/** View audit logs scope: OWN, ALL, CAT (category). Simplified: admin/seo_governor/ai_ops/ph/finance = broader. */
 export function canViewAuditLogs(user) {
     return !!user && normalizeRole(user.role) !== ROLES.VIEWER;
 }
@@ -147,30 +145,30 @@ export function canTriggerERPSync(user) {
     return [ROLES.FINANCE, ROLES.ADMIN, ROLES.SYSTEM].includes(role);
 }
 
-/** System configuration (gate thresholds, tier weights, etc.). Admin only. */
+/** System config (gate thresholds, tier weights). Admin only. */
 export function canModifyConfig(user) {
     if (!user) return false;
     return normalizeRole(user.role) === ROLES.ADMIN;
 }
 
-/** View readiness / manage channel mappings. Channel Manager + others who can view. */
 export function canViewReadiness(user) {
     return canAccess(user);
 }
 
+/** Manage channel mappings. Channel Manager, Admin. */
 export function canManageChannelMappings(user) {
     if (!user) return false;
-    return normalizeRole(user.role) === ROLES.CHANNEL_MANAGER;
+    const role = normalizeRole(user.role);
+    return role === ROLES.CHANNEL_MANAGER || role === ROLES.ADMIN;
 }
 
-/** View tier assignments. Finance, PH, Admin, etc. */
 export function canViewTierAssignments(user) {
     return canAccess(user);
 }
 
-/** Content editors CANNOT override validation gate failures. Return true if this role may bypass (none can). */
+/** No role can override validation gate failures. */
 export function canOverrideGateFailures(user) {
-    return false; // No role can override; dual sign-off is for tier change only
+    return false;
 }
 
 /** Can user edit anything on this SKU? (content OR expert OR cluster, subject to tier) */
@@ -178,6 +176,12 @@ export function canEditSkuAny(user, sku) {
     if (!user || !sku) return false;
     if (sku.tier === 'KILL') return false;
     return canEditContentFieldsForTier(user, sku) || canEditExpertAuthority(user, sku) || canAssignCluster(user);
+}
+
+/** Assign/approve briefs + view effort reports. CONTENT_LEAD. */
+export function canAssignBriefs(user) {
+    if (!user) return false;
+    return normalizeRole(user.role) === ROLES.CONTENT_LEAD || normalizeRole(user.role) === ROLES.ADMIN;
 }
 
 export default {
@@ -205,4 +209,5 @@ export default {
     canViewTierAssignments,
     canOverrideGateFailures,
     canEditSkuAny,
+    canAssignBriefs,
 };

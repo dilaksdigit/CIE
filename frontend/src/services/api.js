@@ -87,10 +87,16 @@ export const configApi = {
     update: (data) => api.put('/config', data),
 };
 
+// ====== Dashboard (S4 Maturity, Decay, Effort, Staff KPIs) ======
+export const dashboardApi = {
+    getSummary: () => api.get('/dashboard/summary'),
+    getDecayAlerts: () => api.get('/dashboard/decay-alerts'),
+};
+
 // ====== Audit Results ======
 export const auditResultApi = {
     getBySkuId: (skuId) => api.get(`/skus/${skuId}/audit-results`),
-    getDecayAlerts: () => api.get('/audit-results/decay-alerts'),
+    getDecayAlerts: () => api.get('/dashboard/decay-alerts'),
     getWeeklyScores: () => api.get('/audit-results/weekly-scores'),
 };
 

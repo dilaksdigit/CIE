@@ -8,7 +8,8 @@ enum GateType: string
  case G3_SEO = 'G3_SEO';
  case G3_SECONDARY_INTENT = 'G3_SECONDARY_INTENT';
  case G4_ANSWER_BLOCK = 'G4_ANSWER_BLOCK';
- case G4_VECTOR = 'G4_VECTOR';
+ case G4_VECTOR = 'G4_VECTOR';   // Legacy alias; use G5_VECTOR for semantic/vector gate
+ case G5_VECTOR = 'G5_VECTOR';   // Semantic validation (cluster match)
  case G5_TECHNICAL = 'G5_TECHNICAL';
  case G6_COMMERCIAL = 'G6_COMMERCIAL';
  case G6_COMMERCIAL_POLICY = 'G6_COMMERCIAL_POLICY';
@@ -23,7 +24,8 @@ enum GateType: string
  self::G3_SEO => 'G3 - SEO Metadata',
  self::G3_SECONDARY_INTENT => 'G3 - Secondary Intent',
  self::G4_ANSWER_BLOCK => 'G4 - Answer Block',
- self::G4_VECTOR => 'G4 - Semantic Validation',
+ self::G4_VECTOR => 'G4 - Semantic Validation (legacy)',
+ self::G5_VECTOR => 'G5 - Semantic (Vector) Validation',
  self::G5_TECHNICAL => 'G5 - Technical Specifications',
  self::G6_COMMERCIAL => 'G6 - Commercial Data',
  self::G6_COMMERCIAL_POLICY => 'G6.1 - Commercial Policy',

@@ -13,13 +13,13 @@ class RBACMiddleware
         }
 
         $user = auth()->user();
-        
-        // Ensure user has role loaded
+        $user->loadMissing('role');
+
         if (!$user->role) {
             return response()->json(['error' => 'Forbidden - No role assigned'], 403);
         }
 
-        $userRole = strtoupper($user->role->name);
+        $userRole = strtoupper((string) $user->role->name);
         $allowedRoles = array_map('strtoupper', $allowedRoles);
 
         // No superuser bypass: ADMIN must still be explicitly allowed on a route

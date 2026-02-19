@@ -14,7 +14,7 @@ class G4_VectorGate implements GateInterface
  {
  if (!$sku->primary_cluster_id) {
  return new GateResult(
- gate: GateType::G4_VECTOR,
+ gate: GateType::G5_VECTOR,
  passed: false,
  reason: 'No cluster assigned. SKU must belong to at least one cluster.',
  blocking: true
@@ -23,7 +23,7 @@ class G4_VectorGate implements GateInterface
  
         if (!$sku->long_description || strlen(trim($sku->long_description)) < 100) {
  return new GateResult(
- gate: GateType::G4_VECTOR,
+ gate: GateType::G5_VECTOR,
  passed: false,
  reason: 'Long description missing or too short (minimum 100 characters required for vector validation).',
  blocking: true
@@ -40,7 +40,7 @@ class G4_VectorGate implements GateInterface
 
             if ($response['valid']) {
                 return new GateResult(
-                    gate: GateType::G4_VECTOR,
+                    gate: GateType::G5_VECTOR,
                     passed: true,
                     reason: sprintf('Semantic match confirmed (similarity: %.2f)', $response['similarity']),
                     blocking: false,
@@ -49,7 +49,7 @@ class G4_VectorGate implements GateInterface
             }
 
             return new GateResult(
-                gate: GateType::G4_VECTOR,
+                gate: GateType::G5_VECTOR,
                 passed: false,
                 reason: $response['reason'],
                 blocking: true,
@@ -70,7 +70,7 @@ class G4_VectorGate implements GateInterface
             }
 
             return new GateResult(
-                gate: GateType::G4_VECTOR,
+                gate: GateType::G5_VECTOR,
                 passed: false,
                 reason: 'Vector validation temporarily unavailable. Save allowed with DEGRADED status.',
                 blocking: false,

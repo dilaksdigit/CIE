@@ -14,7 +14,7 @@ class AuthController {
     public function register(Request $request) {
         $allowedRoles = [
             'content_editor', 'product_specialist', 'seo_governor', 'channel_manager',
-            'ai_ops', 'portfolio_holder', 'finance', 'admin', 'system', 'viewer',
+            'ai_ops', 'content_lead', 'portfolio_holder', 'finance', 'admin', 'system', 'viewer',
             'editor', 'governor', 'analyst'  // legacy
         ];
 
@@ -43,7 +43,8 @@ class AuthController {
                 'seo_governor' => 'SEO_GOVERNOR',
                 'channel_manager' => 'CHANNEL_MANAGER',
                 'ai_ops' => 'AI_OPS',
-                'portfolio_holder' => 'PORTFOLIO_HOLDER',
+                'content_lead' => 'CONTENT_LEAD',
+                'portfolio_holder' => 'CONTENT_LEAD',
                 'finance' => 'FINANCE',
                 'admin' => 'ADMIN',
                 'system' => 'SYSTEM',

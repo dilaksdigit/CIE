@@ -197,7 +197,7 @@ def sku_similarity(body: SimilarityRequest):
 @app.post("/api/v1/title/validate")
 def title_validate(body: TitleValidateRequest):
     """
-    Validate product title against CIE rules: pipe separator, intent before pipe, attributes after, no brand first, max 120 chars.
+    Validate product title against CIE rules: pipe separator, intent before pipe, attributes after, no brand first, G2 no colour/material/dimension before pipe, max 250 chars (6.1).
     Returns { valid, issues[], suggested_fix }.
     """
     result = validate_title_rules(body.title, body.primary_intent, body.cluster_id)
@@ -211,7 +211,7 @@ def title_suggest(body: TitleSuggestRequest):
     User can accept or edit.
     """
     suggested = suggest_title_from_attrs(body.cluster_id, body.primary_intent, body.attributes or {})
-    return {"suggested_title": suggested, "max_length": 120}
+    return {"suggested_title": suggested, "max_length": 250}
 
 
 @app.post("/api/v1/sku/validate")
@@ -263,9 +263,9 @@ async def sku_validate(request: Request):
 
 @app.post("/validate-vector")
 def validate_vector(body: ValidateVectorRequest):
-    """Validate SKU description against cluster vectors — same JSON as Flask."""
-    description = body.description
-    cluster_id = body.cluster_id
+    """Validate SKU description against cluster vectors. Fail-soft: return 200 with degraded on error (no 500)."""
+    description = body.description or ""
+    cluster_id = body.cluster_id or ""
     sku_id = body.sku_id or "unknown"
     if not description or not cluster_id:
         return JSONResponse(
@@ -277,9 +277,17 @@ def validate_vector(body: ValidateVectorRequest):
         result = validate_cluster_match(sku_vector, cluster_id)
         return result
     except Exception as e:
+        logger.warning("validate-vector fail-soft: %s", e)
+        # Return 200 with degraded so clients don't treat as server error; save allowed, publish blocked
         return JSONResponse(
-            status_code=500,
-            content={"valid": False, "similarity": 0.0, "reason": str(e)},
+            status_code=200,
+            content={
+                "valid": False,
+                "similarity": 0.0,
+                "reason": "Vector validation temporarily unavailable. Save allowed, publish blocked.",
+                "degraded": True,
+                "error_message": str(e),
+            },
         )
 
 
